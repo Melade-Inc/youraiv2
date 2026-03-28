@@ -1,0 +1,1744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YourAI â Private AI Infrastructure for Law Firms</title>
+<meta name="description" content="Build your firm's own AI â trained on your work product, your jurisdiction, your voice. Private infrastructure with zero data retention, full audit trails, and privilege protection. Join the pilot.">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap');
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --cream: #F8F9FA;
+  --cream-dark: #F1F3F5;
+  --ink: #0A1628;
+  --ink-light: #121F36;
+  --ink-muted: #4B5563;
+  --ink-subtle: #6B7280;
+  --white: #FFFFFF;
+  --red-accent: #E8453C;
+  --green-accent: #2563EB;
+  --accent-light: #3B82F6;
+  --border: #E5E7EB;
+  --border-dark: #1E2D45;
+  --serif: 'Instrument Serif', Georgia, serif;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--sans);
+  color: var(--ink);
+  background: var(--cream);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* NAV */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 64px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.nav-left { display: flex; align-items: center; gap: 32px; }
+.nav-logo {
+  display: flex; align-items: center; gap: 10px;
+  text-decoration: none; color: var(--ink);
+}
+.nav-logo-icon {
+  width: 32px; height: 32px; background: var(--ink); border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--white); font-family: var(--serif); font-size: 18px; font-weight: 400;
+}
+.nav-logo-text { font-family: var(--serif); font-size: 20px; }
+.nav-links {
+  display: flex; gap: 24px; list-style: none;
+}
+.nav-links a {
+  font-size: 13px; color: var(--ink-muted); text-decoration: none;
+  font-weight: 500; transition: color 0.2s;
+}
+.nav-links a:hover { color: var(--ink); }
+.nav-links a.active { color: var(--ink); }
+.nav-right { display: flex; align-items: center; gap: 12px; }
+.nav-cta {
+  background: var(--green-accent); color: var(--white); border: none; padding: 10px 20px;
+  border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
+  font-family: var(--sans); transition: opacity 0.2s; text-decoration: none;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.nav-cta:hover { opacity: 0.85; }
+.nav-dashboard {
+  background: var(--white); color: var(--ink); border: 1px solid var(--border);
+  padding: 8px 16px; border-radius: 10px; font-size: 14px; font-weight: 500;
+  cursor: pointer; font-family: var(--sans); text-decoration: none;
+  display: inline-flex; align-items: center; gap: 10px; transition: border-color 0.2s;
+}
+.nav-dashboard:hover { border-color: var(--ink-muted); }
+.nav-dashboard svg { width: 16px; height: 16px; }
+.nav-hamburger { display: none; background: none; border: none; cursor: pointer; padding: 4px; }
+.nav-hamburger svg { width: 24px; height: 24px; stroke: var(--ink); }
+
+/* HERO */
+.hero {
+  padding: 140px 24px 80px;
+  max-width: 820px; margin: 0 auto;
+  text-align: center;
+}
+.hero-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--white); border: 1px solid var(--border);
+  padding: 6px 14px; border-radius: 100px;
+  font-size: 13px; color: var(--ink-muted); font-weight: 500;
+  margin-bottom: 32px;
+}
+.hero-badge-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--green-accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.hero h1 {
+  font-family: var(--serif); font-weight: 400;
+  font-size: clamp(40px, 6vw, 64px);
+  line-height: 1.08; letter-spacing: -0.02em;
+  margin-bottom: 24px;
+}
+.hero h1 em { font-style: italic; }
+.hero-sub {
+  font-size: 18px; color: var(--ink-muted); line-height: 1.65;
+  max-width: 600px; margin: 0 auto 40px;
+}
+.hero-ctas {
+  display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+  margin-bottom: 48px;
+}
+.btn-primary {
+  background: var(--green-accent); color: var(--white); border: none; padding: 14px 28px;
+  border-radius: 8px; font-size: 15px; font-weight: 500; cursor: pointer;
+  font-family: var(--sans); text-decoration: none; transition: opacity 0.2s;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.btn-primary:hover { opacity: 0.85; }
+.btn-secondary {
+  background: transparent; color: var(--ink); border: 1px solid var(--border);
+  padding: 14px 28px; border-radius: 8px; font-size: 15px; font-weight: 500;
+  cursor: pointer; font-family: var(--sans); text-decoration: none;
+  transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px;
+}
+.btn-secondary:hover { border-color: var(--ink-muted); }
+.trust-row {
+  display: flex; gap: 24px; justify-content: center; flex-wrap: wrap;
+  padding-top: 8px;
+}
+.trust-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--ink-muted); font-weight: 500;
+}
+.trust-icon { width: 16px; height: 16px; opacity: 0.5; }
+
+/* PROBLEM */
+.problem {
+  padding: 80px 24px;
+  background: var(--white);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.problem-inner { max-width: 900px; margin: 0 auto; }
+.problem h2 {
+  font-family: var(--serif); font-weight: 400;
+  font-size: clamp(32px, 4.5vw, 48px);
+  line-height: 1.1; text-align: center; margin-bottom: 16px;
+}
+.problem-sub {
+  text-align: center; color: var(--ink-muted); font-size: 16px;
+  max-width: 620px; margin: 0 auto 48px; line-height: 1.6;
+}
+.problem-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+.problem-card {
+  background: var(--cream); border: 1px solid var(--border);
+  border-radius: 12px; padding: 24px;
+  display: flex; gap: 16px; align-items: flex-start;
+}
+.problem-card-icon {
+  width: 36px; height: 36px; border-radius: 8px;
+  background: rgba(37, 99, 235, 0.08); color: var(--green-accent);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; font-size: 16px;
+}
+.problem-card p { font-size: 14px; color: var(--ink); line-height: 1.5; }
+
+/* CUSTOM AI â THE BIG POSITIONING SECTION */
+.custom-section {
+  padding: 100px 24px;
+  background: var(--ink); color: var(--white);
+}
+.custom-inner { max-width: 900px; margin: 0 auto; }
+.section-label {
+  font-size: 12px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--ink-subtle);
+  margin-bottom: 16px;
+}
+.custom-inner h2 {
+  font-family: var(--serif); font-weight: 400;
+  font-size: clamp(36px, 5vw, 56px);
+  line-height: 1.08; margin-bottom: 24px; color: var(--white);
+  max-width: 700px;
+}
+.custom-inner h2 em { font-style: italic; color: var(--accent-light); }
+.custom-lede {
+  font-size: 18px; color: rgba(255,255,255,0.65); line-height: 1.7;
+  max-width: 620px; margin-bottom: 56px;
+}
+.custom-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+}
+.custom-card {
+  border: 1px solid var(--border-dark); border-radius: 12px; padding: 32px;
+  transition: border-color 0.3s;
+}
+.custom-card:hover { border-color: #444; }
+.custom-card-icon {
+  width: 40px; height: 40px; border-radius: 10px; margin-bottom: 20px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+}
+.custom-card h3 {
+  font-family: var(--serif); font-weight: 400; font-size: 22px;
+  margin-bottom: 10px; color: var(--white);
+}
+.custom-card p {
+  font-size: 14px; color: rgba(255,255,255,0.55); line-height: 1.6;
+}
+
+/* VAULT SECTION â how customization works */
+.vault-section {
+  padding: 80px 24px;
+  background: var(--ink-light); color: var(--white);
+  border-top: 1px solid var(--border-dark);
+}
+.vault-inner { max-width: 720px; margin: 0 auto; text-align: center; }
+.vault-inner h2 {
+  font-family: var(--serif); font-weight: 400;
+  font-size: clamp(28px, 4vw, 40px);
+  line-height: 1.15; margin-bottom: 20px; color: var(--white);
+}
+.vault-inner .vault-sub {
+  font-size: 16px; color: rgba(255,255,255,0.55); line-height: 1.7;
+  max-width: 560px; margin: 0 auto 48px;
+}
+.vault-steps {
+  display: flex; flex-direction: column; gap: 0;
+  text-align: left;
+}
+.vault-step {
+  display: flex; gap: 20px; align-items: flex-start;
+  padding: 24px 0; border-bottom: 1px solid var(--border-dark);
+}
+.vault-step:last-child { border-bottom: none; }
+.vault-step-num {
+  font-size: 12px; font-weight: 700; color: var(--accent-light);
+  width: 28px; flex-shrink: 0; padding-top: 3px;
+}
+.vault-step h3 {
+  font-family: var(--serif); font-weight: 400; font-size: 20px;
+  margin-bottom: 4px; color: var(--white);
+}
+.vault-step p {
+  font-size: 14px; color: rgba(255,255,255,0.5); line-height: 1.55;
+}
+
+/* FEATURES */
+.solution {
+  padding: 80px 24px;
+  max-width: 900px; margin: 0 auto;
+}
+.solution h2 {
+  font-family: var(--serif); font-weight: 400;
+  font-size: clamp(32px, 4.5vw, 48px);
+  line-height: 1.1; margin-bottom: 16px;
+}
+.solution-sub {
+  color: var(--ink-muted); font-size: 16px; max-width: 560px;
+  margin-bottom: 48px; line-height: 1.6;
+}
+.features-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+.feature-card {
+  border: 1px solid var(--border); border-radius: 12px; padding: 28px;
+  transition: border-color 0.2s;
+}
+.feature-card:hover { border-color: var(--ink-muted); }
+.feature-num {
+  font-size: 11px; color: var(--ink-subtle); font-weight: 600;
+  margin-bottom: 12px;
+}
+.feature-card h3 {
+  font-family: var(--serif); font-weight: 400; font-size: 22px;
+  margin-bottom: 8px;
+}
+.feature-card p {
+  font-size: 14px; color: var(--ink-muted); line-height: 1.5;
+}
+
+/* WHY SECTION */
+.why-section {
+  background: var(--white); padding: 80px 24px;
+  border-top: 1px solid var(--border);
+}
+.why-inner { max-width: 900px; margin: 0 auto; }
+.why-inner h2 {
+  font-family: var(--serif); font-weight: 400;
+  font-size: clamp(32px, 4.5vw, 48px);
+  line-height: 1.1; margin-bottom: 48px;
+}
+.why-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+}
+.why-card {
+  border: 1px solid var(--border); border-radius: 12px; padding: 28px;
+}
+.why-card h3 {
+  font-family: var(--serif); font-weight: 400; font-size: 20px;
+  margin-bottom: 8px;
+}
+.why-card > p {
+  font-size: 14px; color: var(--ink-muted); line-height: 1.6;
+}
+.why-card .check-list { list-style: none; margin-top: 16px; }
+.why-card .check-list li {
+  font-size: 14px; color: var(--ink-muted); padding: 6px 0;
+  display: flex; align-items: flex-start; gap: 10px;
+}
+.check-list li::before {
+  content: "â"; color: var(--green-accent); font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* FOR CLIENTS SECTION */
+.clients-section {
+  padding: 80px 24px;
+  background: var(--white);
+  border-top: 1px solid var(--border);
+}
+.clients-inner { max-width: 960px; margin: 0 auto; }
+.clients-inner h2 {
+  font-family: var(--serif); font-weight: 400;
+  font-size: clamp(32px, 4.5vw, 48px);
+  line-height: 1.1; margin-bottom: 16px;
+}
+.clients-sub {
+  font-size: 16px; color: var(--ink-muted); max-width: 560px;
+  margin-bottom: 48px; line-height: 1.6;
+}
+.clients-layout {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 40px;
+  align-items: start;
+}
+.clients-benefits { display: flex; flex-direction: column; gap: 24px; }
+.client-benefit {
+  display: flex; gap: 16px; align-items: flex-start;
+}
+.client-benefit-icon {
+  width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; background: var(--cream);
+}
+.client-benefit h3 {
+  font-family: var(--serif); font-weight: 400; font-size: 20px;
+  margin-bottom: 4px;
+}
+.client-benefit p {
+  font-size: 14px; color: var(--ink-muted); line-height: 1.5;
+}
+.client-demo {
+  background: var(--cream); border: 1px solid var(--border);
+  border-radius: 16px; padding: 28px; position: relative;
+}
+.client-demo-label {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--ink-subtle); margin-bottom: 16px;
+}
+.demo-question {
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px; margin-bottom: 12px;
+}
+.demo-question-label {
+  font-size: 11px; font-weight: 600; color: var(--ink-subtle);
+  margin-bottom: 6px;
+}
+.demo-question p {
+  font-size: 14px; color: var(--ink); font-style: italic;
+}
+.demo-docs {
+  display: flex; gap: 8px; margin-bottom: 16px;
+}
+.demo-doc {
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 10px; font-size: 11px;
+  color: var(--ink-muted); font-weight: 500;
+}
+.demo-response {
+  background: var(--ink); color: var(--white);
+  border-radius: 10px; padding: 16px;
+}
+.demo-response-label {
+  font-size: 11px; font-weight: 600; color: var(--accent-light);
+  margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.demo-response p {
+  font-size: 13px; color: rgba(255,255,255,0.8); line-height: 1.6;
+}
+.demo-response strong { color: var(--white); }
+.client-stats {
+  display: flex; gap: 16px; margin-top: 16px;
+}
+.client-stat {
+  flex: 1; text-align: center;
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px 8px;
+}
+.client-stat-num {
+  font-family: var(--serif); font-size: 24px; color: var(--ink);
+}
+.client-stat-label {
+  font-size: 11px; color: var(--ink-subtle); margin-top: 2px;
+}
+@media (max-width: 768px) {
+  .clients-layout { grid-template-columns: 1fr; }
+}
+
+/* SAFE PLACE CALLOUT */
+.safe-section {
+  padding: 64px 24px;
+  background: var(--cream-dark);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.safe-inner {
+  max-width: 680px; margin: 0 auto; text-align: center;
+}
+.safe-inner h2 {
+  font-family: var(--serif); font-weight: 400;
+  font-size: clamp(28px, 4vw, 40px);
+  line-height: 1.15; margin-bottom: 16px;
+}
+.safe-inner p {
+  font-size: 16px; color: var(--ink-muted); line-height: 1.65;
+  max-width: 540px; margin: 0 auto;
+}
+
+/* SIGNUP / PILOT */
+.signup-section {
+  padding: 80px 24px;
+  background: var(--cream);
+}
+.signup-inner {
+  max-width: 560px; margin: 0 auto; text-align: center;
+}
+.signup-inner h2 {
+  font-family: var(--serif); font-weight: 400;
+  font-size: clamp(32px, 4.5vw, 44px);
+  line-height: 1.1; margin-bottom: 16px;
+}
+.signup-inner .signup-sub {
+  font-size: 16px; color: var(--ink-muted); margin-bottom: 40px; line-height: 1.6;
+}
+.signup-form {
+  display: flex; flex-direction: column; gap: 12px;
+  text-align: left;
+}
+.form-row { display: flex; gap: 12px; }
+.form-row > * { flex: 1; }
+.form-field label {
+  display: block; font-size: 13px; font-weight: 500;
+  color: var(--ink); margin-bottom: 6px;
+}
+.form-field input, .form-field select {
+  width: 100%; padding: 12px 14px; border: 1px solid var(--border);
+  border-radius: 8px; font-size: 14px; font-family: var(--sans);
+  background: var(--white); color: var(--ink);
+  transition: border-color 0.2s; -webkit-appearance: none;
+}
+.form-field input:focus, .form-field select:focus {
+  outline: none; border-color: var(--ink);
+}
+.form-field input::placeholder { color: var(--ink-subtle); }
+.form-submit { margin-top: 8px; }
+.form-submit button {
+  width: 100%; padding: 14px; background: var(--green-accent); color: var(--white);
+  border: none; border-radius: 8px; font-size: 15px; font-weight: 500;
+  cursor: pointer; font-family: var(--sans); transition: opacity 0.2s;
+}
+.form-submit button:hover { opacity: 0.85; }
+.form-note {
+  font-size: 12px; color: var(--ink-subtle); text-align: center;
+  margin-top: 12px; line-height: 1.5;
+}
+.pilot-perks {
+  display: flex; flex-direction: column; gap: 8px;
+  text-align: left; margin-bottom: 32px; padding: 20px 24px;
+  background: var(--white); border: 1px solid var(--border); border-radius: 12px;
+}
+.pilot-perk {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 14px; color: var(--ink);
+}
+.pilot-perk::before {
+  content: "â"; color: var(--white); font-weight: 700;
+  background: var(--green-accent); width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; font-size: 11px; flex-shrink: 0;
+}
+
+/* FOOTER */
+footer {
+  background: var(--ink); color: rgba(255,255,255,0.5); padding: 48px 24px;
+  font-size: 13px;
+}
+.footer-inner {
+  max-width: 900px; margin: 0 auto;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  flex-wrap: wrap; gap: 32px;
+}
+.footer-col h4 {
+  font-size: 12px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: rgba(255,255,255,0.4);
+  margin-bottom: 12px;
+}
+.footer-col a {
+  display: block; font-size: 13px; color: rgba(255,255,255,0.6);
+  text-decoration: none; padding: 3px 0; transition: color 0.2s;
+}
+.footer-col a:hover { color: var(--white); }
+.footer-logo {
+  display: flex; align-items: center; gap: 10px; color: var(--white);
+  text-decoration: none; margin-bottom: 8px;
+}
+.footer-logo .nav-logo-icon {
+  width: 28px; height: 28px; font-size: 15px;
+  background: var(--green-accent); color: var(--white);
+}
+.footer-logo span { font-family: var(--serif); font-size: 18px; }
+.footer-tagline { font-size: 13px; color: rgba(255,255,255,0.4); max-width: 220px; line-height: 1.5; }
+.footer-bottom {
+  width: 100%; display: flex; justify-content: space-between; align-items: center;
+  padding-top: 32px; margin-top: 16px; border-top: 1px solid var(--border-dark);
+  flex-wrap: wrap; gap: 12px;
+}
+.footer-badges { display: flex; gap: 8px; }
+.footer-badge {
+  padding: 6px 12px; border: 1px solid var(--border-dark);
+  border-radius: 100px; font-size: 12px; color: rgba(255,255,255,0.5);
+}
+.footer-copy { font-size: 12px; color: rgba(255,255,255,0.3); }
+
+/* PAGE HEADER â YourAI // Legal */
+.page-header {
+  margin-top: 64px; padding: 12px 24px;
+  background: var(--ink); border-bottom: 1px solid var(--border-dark);
+  display: flex; align-items: center; justify-content: center;
+}
+.page-header-inner {
+  display: flex; align-items: center; gap: 10px;
+}
+.page-header-brand {
+  font-family: var(--serif); font-size: 14px; color: rgba(255,255,255,0.5);
+  font-weight: 400;
+}
+.page-header-divider {
+  color: var(--accent-light); font-size: 14px; font-weight: 300;
+}
+.page-header-vertical {
+  font-family: var(--serif); font-size: 14px; color: var(--white);
+  font-weight: 400; letter-spacing: 0.02em;
+}
+
+/* CUSTOMIZE YOURAI SECTION */
+.customize-section {
+  padding: 100px 24px;
+  background: linear-gradient(180deg, var(--cream) 0%, var(--cream-dark) 100%);
+  border-top: 1px solid var(--border);
+}
+.customize-inner { max-width: 900px; margin: 0 auto; }
+.customize-inner h2 {
+  font-family: var(--serif); font-weight: 400;
+  font-size: clamp(32px, 4.5vw, 52px);
+  line-height: 1.08; margin-bottom: 20px;
+}
+.customize-inner h2 em { font-style: italic; }
+.customize-lede {
+  font-size: 17px; color: var(--ink-muted); line-height: 1.65;
+  max-width: 620px; margin-bottom: 48px;
+}
+.customize-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+  margin-bottom: 48px;
+}
+.customize-card {
+  border: 1px solid var(--border); border-radius: 14px; padding: 28px;
+  background: var(--white); transition: border-color 0.2s;
+}
+.customize-card:hover { border-color: var(--ink-muted); }
+.customize-card h3 {
+  font-family: var(--serif); font-weight: 400; font-size: 22px;
+  margin-bottom: 8px;
+}
+.customize-card p {
+  font-size: 14px; color: var(--ink-muted); line-height: 1.6;
+}
+.customize-card-icon { font-size: 24px; margin-bottom: 14px; }
+.customize-manifesto {
+  background: var(--ink); border-radius: 16px; padding: 40px;
+  color: var(--white); text-align: center;
+}
+.customize-manifesto h3 {
+  font-family: var(--serif); font-weight: 400; font-size: 28px;
+  margin-bottom: 16px; color: var(--white);
+}
+.customize-manifesto p {
+  font-size: 15px; color: rgba(255,255,255,0.6); line-height: 1.7;
+  max-width: 560px; margin: 0 auto 24px;
+}
+.customize-manifesto a {
+  display: inline-flex; align-items: center; gap: 8px;
+  color: var(--accent-light); text-decoration: none;
+  font-size: 15px; font-weight: 500; transition: opacity 0.2s;
+}
+.customize-manifesto a:hover { opacity: 0.8; }
+
+/* CHATBOT WIDGET */
+.chat-widget {
+  position: fixed; bottom: 24px; right: 24px; z-index: 200;
+}
+.chat-toggle {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: var(--ink); color: var(--white); border: none;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2); transition: transform 0.2s;
+  font-size: 24px;
+}
+.chat-toggle:hover { transform: scale(1.05); }
+.chat-toggle .chat-close { display: none; }
+.chat-toggle.open .chat-icon { display: none; }
+.chat-toggle.open .chat-close { display: block; }
+.chat-panel {
+  display: none; position: absolute; bottom: 70px; right: 0;
+  width: 360px; height: 500px;
+  background: var(--white); border-radius: 16px;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.15);
+  border: 1px solid var(--border);
+  flex-direction: column; overflow: hidden;
+}
+.chat-panel.open { display: flex; }
+.chat-header {
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+}
+.chat-header-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green-accent);
+}
+.chat-header-text h4 {
+  font-family: var(--serif); font-weight: 400; font-size: 15px;
+}
+.chat-header-text p { font-size: 12px; color: var(--ink-subtle); }
+.chat-messages {
+  flex: 1; overflow-y: auto; padding: 16px 20px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.chat-msg {
+  padding: 12px 16px; border-radius: 12px; font-size: 14px;
+  line-height: 1.5; max-width: 85%;
+}
+.chat-msg.bot {
+  background: var(--cream); color: var(--ink);
+}
+.chat-msg.user {
+  background: var(--green-accent); color: var(--white);
+  align-self: flex-end;
+}
+.chat-options {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;
+}
+.chat-option {
+  padding: 8px 14px; border: 1px solid var(--border);
+  border-radius: 100px; background: var(--white);
+  font-size: 13px; color: var(--ink); cursor: pointer;
+  font-family: var(--sans); transition: all 0.2s;
+}
+.chat-option:hover {
+  background: var(--green-accent); color: var(--white);
+  border-color: var(--green-accent);
+}
+.chat-input {
+  padding: 12px 20px; border-top: 1px solid var(--border);
+  display: flex; gap: 8px;
+}
+.chat-input input {
+  flex: 1; border: 1px solid var(--border); border-radius: 100px;
+  padding: 10px 16px; font-size: 14px; font-family: var(--sans);
+  background: var(--cream); color: var(--ink);
+}
+.chat-input input:focus { outline: none; border-color: var(--ink); }
+.chat-input button {
+  background: var(--green-accent); color: var(--white);
+  border: none; border-radius: 50%; width: 40px; height: 40px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.chat-typing {
+  padding: 12px 16px; background: var(--cream); border-radius: 12px;
+  display: flex; gap: 4px; align-items: center;
+}
+.chat-typing .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ink-subtle); animation: typing 1.4s infinite;
+}
+.chat-typing .dot:nth-child(2) { animation-delay: 0.2s; }
+.chat-typing .dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+/* RESPONSIVE */
+@media (max-width: 768px) {
+  .nav-links { display: none; }
+  .nav-hamburger { display: block; }
+  .nav-dashboard { display: none; }
+  .form-row { flex-direction: column; }
+  .customize-grid { grid-template-columns: 1fr; }
+  .chat-panel { width: calc(100vw - 48px); height: 60vh; }
+}
+</style>
+</head>
+<body>
+
+<!-- PAGE CONTEXT HEADER -->
+<div class="page-header">
+<div class="page-header-inner">
+<span class="page-header-brand">YourAI</span>
+<span class="page-header-divider">//</span>
+<span class="page-header-vertical">Legal</span>
+</div>
+</div>
+
+<!-- NAV -->
+<nav>
+<div class="nav-left">
+<a class="nav-logo" href="/">
+<div class="nav-logo-icon">Y</div>
+<div class="nav-logo-text">YourAI</div>
+</a>
+<ul class="nav-links">
+<li><a href="#problem">Problem</a></li>
+<li><a href="#solution">Solution</a></li>
+<li><a href="#clients">For Clients</a></li>
+<li><a href="#pilot">Pilot</a></li>
+</ul>
+</div>
+<div class="nav-right">
+<a class="nav-dashboard" href="/dashboard">
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H1a2.25 2.25 0 012.25 2.25v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"/></svg>
+Firm Dashboard
+</a>
+<a class="nav-cta" href="#pilot">
+Join Pilot
+<svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l3 3 9-7.5"/></svg>
+</a>
+<button class="nav-hamburger" aria-label="Menu">
+<svg fill="none" viewBox="0 0 24 24" stroke-width="1.5">
+<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9h12.5M3.75 15.75h16.5"/>
+</svg>
+</button>
+</div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+<div class="hero-badge">
+<div class="hero-badge-dot"></div>
+Accepting 3 Pilot Firms for Q2 2025
+</div>
+<h1>Build your firmâs<br><em>own AI</em></h1>
+<p class="hero-sub">Trained on your work product, your jurisdiction, your voice. Private infrastructure with zero data retention, full audit trails, and privilege protection.</p>
+<div class="hero-ctas">
+<a class="btn-primary" href="#pilot">
+Apply for Pilot Access â 3âSpots Left
+<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L 21 12 m 0 0l-7.5 7.5M21 12H3"/></svg>
+</a>
+<a class="btn-secondary" href="#solution">
+See how it works 
+en .chat-close { display: block; font-size: 20px; }
+.chat-window {
+  display: none; position: absolute; bottom: 68px; right: 0;
+  width: 380px; max-height: 520px; background: var(--white);
+  border-radius: 16px; border: 1px solid var(--border);
+  box-shadow: 0 12px 48px rgba(0,0,0,0.15);
+  flex-direction: column; overflow: hidden;
+}
+.chat-window.open { display: flex; }
+.chat-header {
+  padding: 16px 20px; background: var(--ink); color: var(--white);
+  display: flex; align-items: center; gap: 10px;
+}
+.chat-header-icon {
+  width: 28px; height: 28px; border-radius: 6px; background: var(--white);
+  color: var(--ink); display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 15px;
+}
+.chat-header-text h4 {
+  font-family: var(--serif); font-size: 16px; font-weight: 400;
+}
+.chat-header-text p {
+  font-size: 11px; color: rgba(255,255,255,0.5);
+}
+.chat-messages {
+  flex: 1; overflow-y: auto; padding: 16px 20px;
+  display: flex; flex-direction: column; gap: 12px;
+  max-height: 340px;
+}
+.chat-msg {
+  padding: 12px 14px; border-radius: 12px; font-size: 13px; line-height: 1.55;
+  max-width: 90%;
+}
+.chat-msg.bot {
+  background: var(--cream); color: var(--ink); align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+.chat-msg.user {
+  background: var(--ink); color: var(--white); align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+.chat-msg strong { font-weight: 600; }
+.chat-input-area {
+  padding: 12px 16px; border-top: 1px solid var(--border);
+  display: flex; gap: 8px; align-items: center;
+}
+.chat-input {
+  flex: 1; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 8px; font-size: 13px; font-family: var(--sans);
+  background: var(--white); color: var(--ink); outline: none;
+}
+.chat-input:focus { border-color: var(--ink); }
+.chat-input::placeholder { color: var(--ink-subtle); }
+.chat-send {
+  width: 36px; height: 36px; border-radius: 8px; border: none;
+  background: var(--ink); color: var(--white); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; transition: opacity 0.2s;
+}
+.chat-send:hover { opacity: 0.85; }
+.chat-suggestions {
+  padding: 0 20px 12px; display: flex; flex-wrap: wrap; gap: 6px;
+}
+.chat-suggestion {
+  padding: 6px 12px; border: 1px solid var(--border); border-radius: 100px;
+  font-size: 11px; color: var(--ink-muted); background: var(--white);
+  cursor: pointer; font-family: var(--sans); transition: all 0.2s;
+}
+.chat-suggestion:hover { border-color: var(--ink); color: var(--ink); }
+
+/* RESPONSIVE */
+@media (max-width: 768px) {
+  .nav-links { display: none; }
+  .nav-hamburger { display: block; }
+  .nav-dashboard { display: none; }
+  .nav-right .nav-cta { font-size: 13px; padding: 8px 14px; }
+  .form-row { flex-direction: column; }
+  .hero { padding: 120px 20px 60px; }
+  .hero h1 { font-size: 36px; }
+  .trust-row { gap: 16px; }
+  nav { padding: 0 16px; }
+  .problem-grid, .features-grid, .why-grid, .custom-grid, .customize-grid { grid-template-columns: 1fr; }
+  .footer-inner { flex-direction: column; }
+  .chat-window { width: calc(100vw - 32px); right: -8px; }
+  .clients-layout { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-left">
+    <a href="https://youraimvp.netlify.app/" class="nav-logo">
+      <div class="nav-logo-icon">Y</div>
+      <span class="nav-logo-text">YourAI</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="https://youraimvp.netlify.app/yourai-legal" class="active">Legal</a></li>
+      <li><a href="https://youraimvp.netlify.app/yourai-how-it-works">How It Works</a></li>
+    </ul>
+  </div>
+  <div class="nav-right">
+    <a href="https://youraimvp.netlify.app/yourai-dashboard" class="nav-dashboard">
+      <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/><path d="M16 3.13a4 4 0 010 7.75" stroke-linecap="round"/></svg>
+      <span style="display:flex;flex-direction:column;line-height:1.2"><span style="font-size:13px;font-weight:600">Open Dashboard</span><span style="font-size:10px;color:var(--ink-subtle);font-weight:400">take a peek at what it looks like â</span></span>
+    </a>
+    <a href="#signup" class="nav-cta" onclick="event.preventDefault(); document.getElementById('signup').scrollIntoView({behavior:'smooth'})">Start Your Build</a>
+  </div>
+  <button class="nav-hamburger" onclick="document.querySelector('.nav-links').style.display = document.querySelector('.nav-links').style.display === 'flex' ? 'none' : 'flex'">
+    <svg fill="none" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-linecap="round"/></svg>
+  </button>
+</nav>
+
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div class="page-header-inner">
+    <span class="page-header-brand">YourAI</span>
+    <span class="page-header-divider">//</span>
+    <span class="page-header-vertical">Legal</span>
+  </div>
+</div>
+
+<!-- HERO -->
+<section class="hero" style="padding-top: 180px;">
+  <div class="hero-badge">
+    <span class="hero-badge-dot"></span>
+    Accepting pilot firms â 12 spots remaining
+  </div>
+  <h1>What if ChatGPT was built <em>exclusively</em> for your firm?</h1>
+  <p class="hero-sub">We're not here to pitch you the next revolutionary AI. You've heard that before. We're here to give you the first AI platform that lets <strong>you</strong> design exactly what you want â trained on your work product, your jurisdiction, your voice.</p>
+  <div class="hero-ctas">
+    <a href="#signup" class="btn-primary" onclick="event.preventDefault(); document.getElementById('signup').scrollIntoView({behavior:'smooth'})">Build Your Firm's AI â</a>
+    <a href="#vault" class="btn-secondary" onclick="event.preventDefault(); document.getElementById('vault').scrollIntoView({behavior:'smooth'})">See How It Works</a>
+  </div>
+  <div class="trust-row">
+    <span class="trust-item">
+      <svg class="trust-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Zero Data Retention
+    </span>
+    <span class="trust-item">
+      <svg class="trust-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+      SOC 2 Ready
+    </span>
+    <span class="trust-item">
+      <svg class="trust-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+      Privilege-Safe
+    </span>
+    <span class="trust-item">
+      <svg class="trust-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      You Own Your IP
+    </span>
+  </div>
+</section>
+
+<!-- PROBLEM -->
+<section class="problem">
+  <div class="problem-inner">
+    <h2>Right now, your firm's best thinking<br>is training someone else's AI.</h2>
+    <p class="problem-sub">Every brief your associates paste into ChatGPT. Every contract clause fed into Copilot. It's gone â absorbed into models your competitors can access. And you have no record it happened.</p>
+    <div class="problem-grid">
+      <div class="problem-card">
+        <div class="problem-card-icon">â </div>
+        <p>Client-privileged data flowing through public AI platforms that retain, index, and train on your inputs.</p>
+      </div>
+      <div class="problem-card">
+        <div class="problem-card-icon">â </div>
+        <p>No audit trail. When opposing counsel asks how a brief was drafted, your firm has nothing to produce.</p>
+      </div>
+      <div class="problem-card">
+        <div class="problem-card-icon">â </div>
+        <p>Every associate using a different tool, a different prompt, a different quality bar. Your work product is only as consistent as your weakest link.</p>
+      </div>
+      <div class="problem-card">
+        <div class="problem-card-icon">â </div>
+        <p>Decades of institutional knowledge â memos, strategies, winning arguments â locked in file cabinets and retired partners' hard drives. Unsearchable. Wasted.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CUSTOM AI POSITIONING â THE CORE SELL -->
+<section class="custom-section">
+  <div class="custom-inner">
+    <p class="section-label">Your Firm's Own AI</p>
+    <h2>Stop renting AI.<br>Start <em>owning</em> it.</h2>
+    <p class="custom-lede">Let's be honest â aren't we all tired of getting pitched on the next revolutionary AI solution? We get it. That's why we're not reinventing the wheel. We're simply customizing and calibrating the world's best AI to work for <strong>you</strong>. Private infrastructure your firm builds on â a system that learns your practice, protects your data, and compounds your advantage every day.</p>
+    <div class="custom-grid">
+      <div class="custom-card">
+        <div class="custom-card-icon">ð</div>
+        <h3>Tuned to your jurisdiction</h3>
+        <p>Your AI understands the local rules, procedural nuances, and judicial preferences where you actually practice. Not a generic model trained on California case law when you're litigating in Cook County.</p>
+      </div>
+      <div class="custom-card">
+        <div class="custom-card-icon">â</div>
+        <h3>Drafts like you draft</h3>
+        <p>Feed your best work into your private data vault. Your AI learns your tone, your structure, your firm's formatting standards â then produces first drafts that sound like a senior partner wrote them, not a machine.</p>
+      </div>
+      <div class="custom-card">
+        <div class="custom-card-icon">ð</div>
+        <h3>Your data vault. Nobody else's.</h3>
+        <p>Everything stays inside your private infrastructure. Your memos, strategies, and client data never touch a shared model. Zero retention. Zero training. Zero exposure. The AI gets smarter for you and only you.</p>
+      </div>
+      <div class="custom-card">
+        <div class="custom-card-icon">ð§ </div>
+        <h3>Institutional knowledge, unlocked</h3>
+        <p>That partner who retired with 30 years of trial strategy? Those winning motions buried in your DMS from 2014? YourAI makes your firm's entire history queryable â securely, instantly, by anyone you authorize.</p>
+      </div>
+      <div class="custom-card">
+        <div class="custom-card-icon">ð</div>
+        <h3>Gets sharper every day</h3>
+        <p>Generic AI tools are frozen in time. Your AI compounds. Every contract reviewed, every brief filed, every memo approved makes the system more valuable to your firm. By month six, no competitor can replicate what you've built.</p>
+      </div>
+      <div class="custom-card">
+        <div class="custom-card-icon">ð¡</div>
+        <h3>Safe enough to actually use</h3>
+        <p>Give your team a place to use AI without the ethics risk. Full audit trails, privilege protections, role-based access â the governance layer that lets you say yes instead of writing another memo that says no.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- VAULT / HOW IT WORKS -->
+<section class="vault-section" id="vault">
+  <div class="vault-inner">
+    <h2>From your firm's first prompt<br>to a proprietary advantage.</h2>
+    <p class="vault-sub">Most firms are 30 days from having AI infrastructure their competitors can't touch. Here's how it works.</p>
+    <div class="vault-steps">
+      <div class="vault-step">
+        <span class="vault-step-num">01</span>
+        <div>
+          <h3>Connect your knowledge</h3>
+          <p>We plug into your existing document management system, practice management tools, and internal repositories. Your data stays where it is â we build the intelligence layer on top.</p>
+        </div>
+      </div>
+      <div class="vault-step">
+        <span class="vault-step-num">02</span>
+        <div>
+          <h3>Configure your AI agents</h3>
+          <p>Purpose-built agents for each workflow â contract review, research, drafting, discovery. Each one scoped to the right practice area, the right permissions, the right data.</p>
+        </div>
+      </div>
+      <div class="vault-step">
+        <span class="vault-step-num">03</span>
+        <div>
+          <h3>Train on your voice</h3>
+          <p>Your data vault absorbs your firm's best work product â formatting standards, drafting conventions, jurisdiction-specific knowledge. The AI starts producing output that reflects your firm, not the internet.</p>
+        </div>
+      </div>
+      <div class="vault-step">
+        <span class="vault-step-num">04</span>
+        <div>
+          <h3>Compound your advantage</h3>
+          <p>Every matter closed, every document reviewed, every query answered makes the system sharper. Within weeks, your firm has an AI asset no one else can buy, copy, or access.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="solution">
+  <p class="section-label">What Your Team Gets</p>
+  <h2>The deliverables your firm<br>actually needs.</h2>
+  <p class="solution-sub">Not a chatbot. Not a search bar. Purpose-built AI agents that produce real legal work product â in your voice, for your jurisdiction.</p>
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-num">01</div>
+      <h3>Contract Review & Redlining</h3>
+      <p>Clause analysis, risk flagging, and redline suggestions trained on your firm's playbook â not a generic model that doesn't know your deal terms from a form contract.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-num">02</div>
+      <h3>Case Research & Briefs</h3>
+      <p>Research grounded in real authority, cross-referenced against your firm's prior work. First drafts of memos and briefs that your associates actually submit, not delete.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-num">03</div>
+      <h3>Client Memo Drafting</h3>
+      <p>Engagement letters, client advisories, and memos that match your firm's voice and formatting from the first draft. Because clients notice when output doesn't sound like you.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-num">04</div>
+      <h3>Privilege-Safe Discovery</h3>
+      <p>Search and summarize across case files, depositions, and internal communications. Everything stays inside your environment. Nothing leaks. Nothing trains.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-num">05</div>
+      <h3>Complete Audit Trail</h3>
+      <p>Every prompt, every output, every decision â tracked, timestamped, and attributable. The evidence your ethics committee and your malpractice carrier both want to see.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-num">06</div>
+      <h3>Role-Based Access</h3>
+      <p>Partners, associates, and paralegals each get agents scoped to their function. Ethical walls stay intact. Matter-level permissions enforced by architecture, not policy.</p>
+    </div>
+  </div>
+</section>
+
+<!-- FOR CLIENTS -->
+<section class="clients-section" id="for-clients">
+  <div class="clients-inner">
+    <p class="section-label">See Why Your Clients Will Love This</p>
+    <h2>Finally, your clients understand<br>what's happening with their case.</h2>
+    <p class="clients-sub">A secure workspace where clients get instant clarity â without overwhelming your calendar with calls you can't bill for.</p>
+    <div class="clients-layout">
+      <div class="clients-benefits">
+        <div class="client-benefit">
+          <div class="client-benefit-icon">ð¬</div>
+          <div>
+            <h3>Questions answered instantly</h3>
+            <p>Clients ask questions anytime â nights, weekends, between meetings â and get clear answers grounded in their actual case documents. No more waiting days for a callback.</p>
+          </div>
+        </div>
+        <div class="client-benefit">
+          <div class="client-benefit-icon">ð</div>
+          <div>
+            <h3>Plain-English explanations</h3>
+            <p>Complex filings, motions, and contract clauses translated into language your clients can actually act on. They stop asking you to re-explain what you already sent.</p>
+          </div>
+        </div>
+        <div class="client-benefit">
+          <div class="client-benefit-icon">ð</div>
+          <div>
+            <h3>One secure workspace</h3>
+            <p>Messages, documents, and case context in one encrypted environment â replacing the scattered email threads, missed voicemails, and "can you resend that?" requests.</p>
+          </div>
+        </div>
+        <div class="client-benefit">
+          <div class="client-benefit-icon">âï¸</div>
+          <div>
+            <h3>You stay in control</h3>
+            <p>Set exactly what the AI can access per case. Review every client question and AI response. Granular permissions by client or matter. Your practice, your rules.</p>
+          </div>
+        </div>
+      </div>
+      <div class="client-demo">
+        <div class="client-demo-label">Client Workspace Preview</div>
+        <div class="demo-question">
+          <div class="demo-question-label">Client Question</div>
+          <p>"What does the summary judgment motion mean for my case?"</p>
+        </div>
+        <div class="demo-docs">
+          <span class="demo-doc">ð Motion_SummaryJudgment.pdf</span>
+          <span class="demo-doc">ð Case_Timeline.pdf</span>
+        </div>
+        <div class="demo-response">
+          <div class="demo-response-label">AI Response</div>
+          <p><strong>Summary judgment</strong> is a request for the court to decide the case â or part of it â without a trial. In your case, the opposing party is arguing there are no disputed facts in <strong>3 key areas</strong>. Your attorney has filed a response challenging each point with evidence from your deposition and the contract terms...</p>
+        </div>
+        <a href="https://youraimvp.netlify.app/yourai-legal#for-clients" style="display:inline-flex;align-items:center;gap:8px;margin-top:16px;padding:12px 20px;background:var(--ink);color:var(--white);border-radius:8px;text-decoration:none;font-size:14px;font-weight:500;font-family:var(--sans);transition:opacity 0.2s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">Explore the Client Workspace â</a>
+        <div class="client-stats">
+          <div class="client-stat">
+            <div class="client-stat-num">&lt; 2 min</div>
+            <div class="client-stat-label">Avg Response</div>
+          </div>
+          <div class="client-stat">
+            <div class="client-stat-num">94%</div>
+            <div class="client-stat-label">Client Satisfaction</div>
+          </div>
+          <div class="client-stat">
+            <div class="client-stat-num">24/7</div>
+            <div class="client-stat-label">Availability</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SAFE PLACE CALLOUT -->
+<section class="safe-section">
+  <div class="safe-inner">
+    <h2>Give your team a safe place to use AI.</h2>
+    <p>Your attorneys are already using AI â the question isn't if, it's where. We're not here to scare you with another pitch. We're here to give <strong>you</strong> the infrastructure to control it: audit trails, privilege protection, zero data retention. Your terms. Your rules.</p>
+  </div>
+</section>
+
+<!-- WHY â BY ROLE -->
+<section class="why-section">
+  <div class="why-inner">
+    <p class="section-label">Built for Every Seat at the Table</p>
+    <h2>The AI infrastructure your<br>entire firm can trust.</h2>
+    <div class="why-grid">
+      <div class="why-card">
+        <h3>For Managing Partners</h3>
+        <p>Turn AI from a liability into your firm's defining advantage.</p>
+        <ul class="check-list">
+          <li>Firm-wide AI policy â enforced by architecture, not memos</li>
+          <li>Full visibility into every AI-assisted deliverable</li>
+          <li>Competitive differentiator in client pitches and RFPs</li>
+          <li>Flat pilot pricing â no per-seat games</li>
+        </ul>
+      </div>
+      <div class="why-card">
+        <h3>For Associates & Counsel</h3>
+        <p>Better work product in less time â without the career risk.</p>
+        <ul class="check-list">
+          <li>First drafts in minutes that actually sound like your firm</li>
+          <li>Research grounded in real, verifiable citations</li>
+          <li>Your work stays private â never used to train a public model</li>
+          <li>Gets better the more you use it â learns your patterns</li>
+        </ul>
+      </div>
+      <div class="why-card">
+        <h3>For Ethics & Compliance</h3>
+        <p>The governance layer your bar association will ask about next year.</p>
+        <ul class="check-list">
+          <li>Full audit trail on every AI interaction, every matter</li>
+          <li>Zero data retention â nothing exists outside your control</li>
+          <li>SOC 2 infrastructure with end-to-end encryption</li>
+          <li>Privilege protections built into the architecture, not bolted on</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SIGNUP FORM -->
+<section class="signup-section" id="signup">
+  <div class="signup-inner">
+    <h2>Build your firm's AI.</h2>
+    <p class="signup-sub">No pitch deck. No demo theater. We're working with a small group of firms who want to design their own AI experience from the ground up. You tell us what matters â we calibrate the platform around your practice.</p>
+    <div class="pilot-perks">
+      <span class="pilot-perk">Free access through the full pilot period</span>
+      <span class="pilot-perk">Direct line to the product team â you shape what we build</span>
+      <span class="pilot-perk">Locked-in founding rate at launch (never increases)</span>
+      <span class="pilot-perk">White-glove setup â we configure everything for your firm</span>
+    </div>
+    <form class="signup-form" name="legal-pilot" method="POST" data-netlify="true" netlify-honeypot="bot-field">
+      <input type="hidden" name="form-name" value="legal-pilot">
+      <p style="display:none"><input name="bot-field"></p>
+      <div class="form-row">
+        <div class="form-field">
+          <label for="name">Full Name</label>
+          <input type="text" id="name" name="name" placeholder="Jane Smith" required>
+        </div>
+        <div class="form-field">
+          <label for="email">Work Email</label>
+          <input type="email" id="email" name="email" placeholder="jane@firmname.com" required>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label for="firm">Firm Name</label>
+          <input type="text" id="firm" name="firm" placeholder="Smith & Associates LLP" required>
+        </div>
+        <div class="form-field">
+          <label for="size">Firm Size</label>
+          <select id="size" name="size" required>
+            <option value="" disabled selected>Select...</option>
+            <option value="solo">Solo Practice</option>
+            <option value="2-10">2â10 Attorneys</option>
+            <option value="11-50">11â50 Attorneys</option>
+            <option value="51-200">51â200 Attorneys</option>
+            <option value="200+">200+ Attorneys</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-field">
+        <label for="interest">What matters most?</label>
+        <select id="interest" name="interest" required>
+          <option value="" disabled selected>What would you build first?</option>
+          <option value="custom-drafting">Custom drafting in my firm's voice</option>
+          <option value="contract-review">Contract review & redlining</option>
+          <option value="research">Case research & brief generation</option>
+          <option value="knowledge">Making institutional knowledge searchable</option>
+          <option value="governance">AI governance & audit trails</option>
+          <option value="full-platform">The whole platform</option>
+        </select>
+      </div>
+      <div class="form-submit">
+        <button type="submit">Start Building â</button>
+      </div>
+      <p class="form-note">No credit card. No commitment. We'll reach out within 24 hours to walk through what your firm's AI could look like.</p>
+    </form>
+  </div>
+</section>
+
+<!-- CUSTOMIZE YOURAI -->
+<section class="customize-section" id="customize">
+  <div class="customize-inner">
+    <p class="section-label">Customize YourAI</p>
+    <h2>Your AI. Your rules.<br><em>You</em> decide what it becomes.</h2>
+    <p class="customize-lede">You've been sold "revolutionary AI" a dozen times this year. We built YourAI because we were tired of the same pitch â ten different tools, none of which actually knew our work. So we stopped trying to reinvent the wheel and started letting <strong>you</strong> customize it instead. No developers. No code. Just you, designing your perfect AI experience.</p>
+    <div class="customize-grid">
+      <div class="customize-card">
+        <div class="customize-card-icon">ð¨</div>
+        <h3>Design your workflows</h3>
+        <p>You know your practice better than anyone. Use the "Customize YourAI" agent in your dashboard to build workflows you didn't even know were possible â contract intake pipelines, client onboarding sequences, research templates. You describe it, your AI builds it.</p>
+      </div>
+      <div class="customize-card">
+        <div class="customize-card-icon">ð¡</div>
+        <h3>Dream up any feature</h3>
+        <p>Want your AI to flag specific clause types? Auto-generate case timelines? Summarize depositions in your preferred format? Just ask. Your Customize agent turns your ideas into working features â no ticket system, no waiting for a product roadmap.</p>
+      </div>
+      <div class="customize-card">
+        <div class="customize-card-icon">ð</div>
+        <h3>Pull in your data, your way</h3>
+        <p>You decide what your AI knows. Connect more document sources, upload your firm's templates, feed in your jurisdiction's local rules. The more you give it, the more it gives back â and it never shares your data with anyone else.</p>
+      </div>
+      <div class="customize-card">
+        <div class="customize-card-icon">ð</div>
+        <h3>No code. No developers. Just you.</h3>
+        <p>YourAI was built so that you never need to hire a developer or learn to write code. You tell your AI what you want in plain English. It configures itself. Your perfect AI experience is a conversation away.</p>
+      </div>
+    </div>
+    <div class="customize-manifesto">
+      <h3>The first AI company that lets <em>you</em> design your experience.</h3>
+      <p>Every other AI tool tells you what it does. We're the first to ask what <strong>you</strong> want it to do. We understand the frustration of bouncing between platforms that each do one thing and none of them know your practice. YourAI's mission is simple: give every attorney their own say in what their AI experience looks like â your workflows, your data, your voice, your rules. No more settling. No more adapting to someone else's vision of AI. This is yours to shape.</p>
+      <a href="#signup" onclick="event.preventDefault(); document.getElementById('signup').scrollIntoView({behavior:'smooth'})">Start building your AI â</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-col">
+      <a href="https://youraimvp.netlify.app/" class="footer-logo">
+        <div class="nav-logo-icon">Y</div>
+        <span>YourAI</span>
+      </a>
+      <p class="footer-tagline">Private AI infrastructure for organizations that take data seriously.</p>
+    </div>
+    <div class="footer-col">
+      <h4>Platform</h4>
+      <a href="https://youraimvp.netlify.app/yourai-legal">Legal</a>
+      <a href="https://youraimvp.netlify.app/yourai-how-it-works">How It Works</a>
+      <a href="https://youraimvp.netlify.app/yourai-dashboard">Dashboard</a>
+    </div>
+    <div class="footer-col">
+      <h4>Legal</h4>
+      <a href="#">Privacy</a>
+      <a href="#">Terms</a>
+      <a href="#">Security</a>
+      <a href="#">Contact</a>
+    </div>
+    <div class="footer-bottom">
+      <span class="footer-copy">&copy; 2026 YourAI. All rights reserved.</span>
+      <div class="footer-badges">
+        <span class="footer-badge">SOC 2</span>
+        <span class="footer-badge">Zero Retention</span>
+        <span class="footer-badge">End-to-End Encrypted</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<!-- CHATBOT WIDGET -->
+<div class="chat-widget">
+  <div class="chat-window" id="chatWindow">
+    <div class="chat-header">
+      <div class="chat-header-icon">Y</div>
+      <div class="chat-header-text">
+        <h4>Ask YourAI</h4>
+        <p>Learn how YourAI works for your firm</p>
+      </div>
+    </div>
+    <div class="chat-messages" id="chatMessages">
+      <div class="chat-msg bot">
+        <strong>Hey.</strong> I know â another chat widget. But I'm not here to sell you anything. I'm here to answer whatever you're actually wondering about: how this works, whether your data is safe, what makes this different from the last five AI pitches you sat through.<br><br>Ask me anything. I'll give you a straight answer.
+      </div>
+    </div>
+    <div class="chat-suggestions" id="chatSuggestions">
+      <button class="chat-suggestion" onclick="askQuestion(this.textContent)">How is my data protected?</button>
+      <button class="chat-suggestion" onclick="askQuestion(this.textContent)">How is this different from ChatGPT?</button>
+      <button class="chat-suggestion" onclick="askQuestion(this.textContent)">What about Harvey AI?</button>
+      <button class="chat-suggestion" onclick="askQuestion(this.textContent)">Can it actually draft like my firm?</button>
+      <button class="chat-suggestion" onclick="askQuestion(this.textContent)">What's the ROI for a firm like mine?</button>
+      <button class="chat-suggestion" onclick="askQuestion(this.textContent)">Why not just build in-house?</button>
+    </div>
+    <div class="chat-input-area">
+      <input class="chat-input" id="chatInput" type="text" placeholder="Ask anything about YourAI..." onkeydown="if(event.key==='Enter')sendChat()">
+      <button class="chat-send" onclick="sendChat()">â</button>
+    </div>
+  </div>
+  <!-- Hidden Netlify form for chatbot lead capture -->
+<form name="lead-capture" data-netlify="true" netlify-honeypot="bot-field" hidden>
+  <input name="bot-field">
+  <input name="name"><input name="email"><input name="phone">
+  <input name="firm"><input name="teamSize"><input name="location">
+  <input name="vertical"><input name="pageSource"><input name="capturedAt">
+</form>
+<button class="chat-toggle" id="chatToggle" onclick="toggleChat()">
+    <span class="chat-icon">ð¬</span>
+    <span class="chat-close">â</span>
+  </button>
+</div>
+
+<script>
+function toggleChat() {
+  const win = document.getElementById('chatWindow');
+  const btn = document.getElementById('chatToggle');
+  win.classList.toggle('open');
+  btn.classList.toggle('open');
+}
+
+function askQuestion(q) {
+  document.getElementById('chatSuggestions').style.display = 'none';
+  addMessage(q, 'user');
+  setTimeout(() => addMessage(getResponse(q), 'bot'), 600);
+}
+
+function sendChat() {
+  const input = document.getElementById('chatInput');
+  const q = input.value.trim();
+  if (!q) return;
+  input.value = '';
+  document.getElementById('chatSuggestions').style.display = 'none';
+  addMessage(q, 'user');
+  setTimeout(() => addMessage(getResponse(q), 'bot'), 600);
+}
+
+function addMessage(text, type) {
+  const msgs = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + type;
+  div.innerHTML = text;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+// âââââââââââââââââââââââââââââââââââââââââââ
+// PAGE AWARENESS â detect context from URL
+// âââââââââââââââââââââââââââââââââââââââââââ
+var pageContext = 'general';
+(function detectPage(){
+  var path = window.location.pathname.toLowerCase();
+  if (path.includes('legal')) pageContext = 'legal';
+  else if (path.includes('health')) pageContext = 'healthcare';
+  else if (path.includes('finance')) pageContext = 'finance';
+  else if (path.includes('compliance')) pageContext = 'compliance';
+  else if (path.includes('pricing')) pageContext = 'pricing';
+  else if (path.includes('about')) pageContext = 'about';
+})();
+
+// Industry framing profiles â pain points, analogies, closers
+var industryFrames = {
+  legal: {
+    painPoints: 'billable hour leakage, client confidentiality, data breach exposure, discovery overload',
+    frame: 'risk reduction, time recovery, airtight privacy, billing leverage',
+    analogyTone: 'vault, private car, locked office â exclusivity and protection',
+    greeting: "Hey. I know â another chat widget. But I'm not here to sell you anything. I'm here to answer whatever you're actually wondering about: how this works, whether your data is safe, what makes this different from the last five AI pitches you sat through.",
+    label: 'attorney'
+  },
+  healthcare: {
+    painPoints: 'HIPAA liability, documentation burden, clinical workflow friction, patient data sensitivity',
+    frame: 'compliance by design, reducing admin load, protecting patient trust',
+    analogyTone: 'private exam room, locked chart room â clinical and careful',
+    greeting: "Hey. I'm the YourAI assistant â here to answer your questions about private AI for healthcare. HIPAA, documentation, clinical workflows, data security â ask me anything. Straight answers only.",
+    label: 'clinician or practice manager'
+  },
+  finance: {
+    painPoints: 'SEC/FINRA exposure, client data confidentiality, audit trails, reporting burden',
+    frame: 'compliance-grade infrastructure, defensible audit logs, advisor leverage',
+    analogyTone: 'private wealth vault, separate ledger â precision and control',
+    greeting: "Hey. I'm the YourAI assistant â here to answer your questions about private AI for financial services. Compliance, audit trails, client confidentiality â ask me anything.",
+    label: 'advisor or compliance officer'
+  },
+  compliance: {
+    painPoints: 'regulatory change velocity, siloed data, proving compliance to auditors',
+    frame: 'immutable records, role-based access, SOC 2 by design',
+    analogyTone: 'chain of custody, locked filing cabinet with a log â process and proof',
+    greeting: "Hey. I'm the YourAI assistant. Ask me about compliance-grade AI infrastructure â audit trails, access controls, regulatory readiness. No fluff.",
+    label: 'compliance lead'
+  },
+  general: {
+    painPoints: 'data exposure, manual work, limited AI customization',
+    frame: 'private infrastructure, time savings, full control',
+    analogyTone: 'private office vs shared workspace',
+    greeting: "Hey. I'm the YourAI assistant. Before I give you the most relevant breakdown â what industry are you in, or what kind of work would you primarily be using AI for?",
+    label: 'professional'
+  },
+  pricing: {
+    painPoints: 'unclear ROI, per-seat pricing games, hidden costs',
+    frame: 'value, ROI, and tier fit',
+    analogyTone: 'investment vs expense',
+    greeting: "Hey. Looking at pricing? Smart. Before I break down the best fit â how big is your team, and what kind of work would this be for?",
+    label: 'decision-maker'
+  },
+  about: {
+    painPoints: '',
+    frame: 'trust, team, mission',
+    analogyTone: '',
+    greeting: "Hey. Glad you're here. I can tell you about who we are, why we built this, and what makes us different â without the marketing fluff. What would you like to know?",
+    label: 'visitor'
+  }
+};
+
+// âââââââââââââââââââââââââââââââââââââââââââ
+// LEAD CAPTURE â progressive field collection
+// âââââââââââââââââââââââââââââââââââââââââââ
+var leadCapture = {
+  active: false,
+  step: 0,
+  triggered: false,
+  data: { name: '', email: '', phone: '', firm: '', teamSize: '', location: '' },
+  prompts: [
+    "What's your name?",
+    "And your email address?",
+    "Best phone number to reach you?",
+    "What's the name of your firm or organization?",
+    "Roughly how many people are on your team?",
+    "And your city or location? (just city/state is fine)"
+  ],
+  fields: ['name', 'email', 'phone', 'firm', 'teamSize', 'location']
+};
+
+function triggerLeadCapture() {
+  if (leadCapture.triggered) return false;
+  leadCapture.triggered = true;
+  leadCapture.active = true;
+  leadCapture.step = 0;
+  return true;
+}
+
+function handleLeadCapture(answer) {
+  var field = leadCapture.fields[leadCapture.step];
+  leadCapture.data[field] = answer;
+  leadCapture.step++;
+
+  if (leadCapture.step >= leadCapture.fields.length) {
+    leadCapture.active = false;
+    var name = leadCapture.data.name.split(' ')[0];
+    // Build lead summary with detected vertical
+    var vertical = pageContext.charAt(0).toUpperCase() + pageContext.slice(1);
+    var leadSummary = {
+      name: leadCapture.data.name,
+      email: leadCapture.data.email,
+      phone: leadCapture.data.phone,
+      firm: leadCapture.data.firm,
+      teamSize: leadCapture.data.teamSize,
+      location: leadCapture.data.location,
+      vertical: vertical,
+      pageSource: window.location.pathname,
+      capturedAt: new Date().toISOString()
+    };
+    console.log('LEAD CAPTURED:', JSON.stringify(leadSummary));
+    // Attempt Netlify form submission if available
+    try {
+      var formData = new FormData();
+      formData.append('form-name', 'lead-capture');
+      Object.keys(leadSummary).forEach(function(k){ formData.append(k, leadSummary[k]); });
+      fetch('/', { method: 'POST', body: formData }).catch(function(){});
+    } catch(e){}
+    return "<strong>Perfect " + name + "</strong>, we'll be in touch shortly. Our team personally reviews every new inquiry â you're not getting an automated sequence, you're getting a real conversation.<br><br>In the meantime, feel free to <a href='https://youraimvp.netlify.app/yourai-dashboard' style='color:var(--accent-light);font-weight:500'>take a peek at the dashboard</a> or keep asking me questions. I'm here.";
+  }
+
+  // Serve next prompt (two fields at a time for steps 2-3 and 4-5)
+  return leadCapture.prompts[leadCapture.step];
+}
+
+// Detect interest signals for lead capture trigger
+function isReadyToCapture(ql) {
+  var signals = ['ready', 'sign up', 'signup', 'interested', 'let\'s do it', 'let\'s go', 'sounds good', 'i\'m in', 'how do i start', 'get started', 'set me up', 'yes', 'absolutely', 'count me in', 'love to', 'would love'];
+  for (var i = 0; i < signals.length; i++) {
+    if (ql.includes(signals[i])) return true;
+  }
+  return false;
+}
+
+// Track conversation depth for closer timing
+var chatTurns = 0;
+var closerDelivered = false;
+
+function getResponse(q) {
+  const ql = q.toLowerCase();
+
+  // If lead capture is active, route through capture flow
+  if (leadCapture.active) {
+    return handleLeadCapture(q);
+  }
+
+  // Check if visitor is expressing interest â trigger lead capture
+  if (!leadCapture.triggered && chatTurns >= 2 && isReadyToCapture(ql)) {
+    triggerLeadCapture();
+    return "Sounds like YourAI might be exactly what you're looking for. Let's get you set up â " + leadCapture.prompts[0];
+  }
+
+  chatTurns++;
+
+  // GENERAL PAGE â ask industry first if unknown
+  if (pageContext === 'general' && chatTurns === 1 && !ql.includes('legal') && !ql.includes('health') && !ql.includes('financ') && !ql.includes('complian')) {
+    // Check if they revealed their industry in their first message
+    if (ql.includes('law') || ql.includes('attorney') || ql.includes('firm')) { pageContext = 'legal'; }
+    else if (ql.includes('doctor') || ql.includes('clinic') || ql.includes('hospital') || ql.includes('patient')) { pageContext = 'healthcare'; }
+    else if (ql.includes('advisor') || ql.includes('wealth') || ql.includes('bank') || ql.includes('fund')) { pageContext = 'finance'; }
+    else if (ql.includes('audit') || ql.includes('regulat') || ql.includes('compliance')) { pageContext = 'compliance'; }
+  }
+
+  // THE CLOSER â Custom YourAI Agent (deliver after 3+ turns, or on wish/gap keywords)
+  var closerTrigger = (ql.includes('wish') || ql.includes('want') || ql.includes('if only') || ql.includes('need') || ql.includes('can it') || ql.includes('possible') || ql.includes('dream'));
+  var shouldClose = !closerDelivered && (closerTrigger || chatTurns >= 4);
+
+  var closerSnippet = "";
+  if (shouldClose) {
+    closerDelivered = true;
+    closerSnippet = "<br><br><strong>One more thing worth knowing:</strong> Inside your dashboard there's a custom AI builder. If you want a feature, a workflow, a specific data view â you tell your YourAI agent in plain English. No developers. No code. Our engineers and AI orchestration layer go to work and make it yours. It's the first platform where your AI actually listens â and then actually builds.";
+  }
+
+  // LEAD CAPTURE NUDGE â after 5+ turns, gently offer
+  var captureNudge = "";
+  if (!leadCapture.triggered && chatTurns >= 5 && chatTurns % 3 === 0) {
+    captureNudge = "<br><br>By the way â sounds like you're asking the right questions. If you're ready to see this in action, just say the word and I'll get you set up.";
+  }
+
+  // COMPETITIVE â ChatGPT / ChatGPT Enterprise
+  if ((ql.includes('chatgpt') || ql.includes('chat gpt')) && !ql.includes('different')) {
+    return "<strong>ChatGPT is a hotel. YourAI is your house.</strong><br><br>Even ChatGPT Enterprise still runs on OpenAI's infrastructure â your data touches their servers. YourAI runs exclusively on your organization's private AWS environment. Zero data sharing. Period.<br><br>ChatGPT is also one model. YourAI routes to the best model for each job â OpenAI, Anthropic's Claude, or Google Gemini. And ChatGPT has no concept of your org structure. YourAI has a four-role access system (Admin, Manager, Team, Client) built in, so your ethical walls stay intact.<br><br>The honest version? ChatGPT is brilliant for general tasks. But for a law firm handling privileged client data, it's like doing case prep on a shared computer at the public library." + closerSnippet;
+  }
+
+  // COMPETITIVE â Microsoft Copilot
+  if (ql.includes('copilot') || ql.includes('microsoft')) {
+    return "<strong>Copilot is a feature. YourAI is infrastructure.</strong><br><br>Copilot is woven into Microsoft's ecosystem â your data feeds their broader infrastructure. YourAI is AWS-native at the core. Your data stays in your lane, not Microsoft's.<br><br>The bigger gap: Copilot is bolted onto tools you already use. What you see is what you get â no custom workflows, no AI builder, no way to shape it to your practice. YourAI is purpose-built for professional services. If you want a feature that doesn't exist yet, you tell your dashboard agent and our engineering layer builds it.<br><br>Think of it this way: Copilot adds a microwave to your kitchen. YourAI lets you design the kitchen." + closerSnippet;
+  }
+
+  // COMPETITIVE â Harvey AI
+  if (ql.includes('harvey')) {
+    return "<strong>Harvey is a product. YourAI is a platform you shape.</strong><br><br>Harvey is legal-only and impressive in its lane. But it doesn't let you <em>build</em>. You use what they ship. YourAI's custom agent builder turns your feedback into real features â without hiring a developer or waiting on someone else's roadmap.<br><br>Harvey is also exclusively legal. If your firm touches healthcare compliance, financial advisory, or cross-industry work, you'd need a separate tool. YourAI serves any data-sensitive vertical from one platform.<br><br>The real difference? Harvey decides what legal AI looks like. YourAI lets <em>you</em> decide." + closerSnippet;
+  }
+
+  // COMPETITIVE â Lexis / Westlaw
+  if (ql.includes('lexis') || ql.includes('westlaw') || ql.includes('lexisnexis')) {
+    return "<strong>Lexis and Westlaw are databases. YourAI is your firm's brain.</strong><br><br>Their AI add-ons are expensive, rigid, and built around <em>their</em> existing content â not your firm's data, not your workflows, not your voice. They charge premium per-seat rates with zero customization.<br><br>YourAI can pull from public legal sources like PACER and CourtListener, then layer your proprietary work product on top. Your institutional knowledge becomes searchable. Your drafting style becomes reproducible. And the four-tier pricing model is built for firms at every stage â not just BigLaw budgets.<br><br>It's the difference between renting a library card and owning the library." + closerSnippet;
+  }
+
+  // COMPETITIVE â Building in-house
+  if (ql.includes('in-house') || ql.includes('inhouse') || ql.includes('build our own') || ql.includes('build it ourselves') || ql.includes('hire') || ql.includes('engineer')) {
+    return "<strong>I respect the instinct. But here's the math.</strong><br><br>Hiring AI engineers, managing AWS infrastructure, staying current with model updates, handling SOC 2 compliance, building an access control layer â that's a team of 3â5 engineers minimum, $800Kâ$1.5M annually, and 12+ months before you see anything usable.<br><br>YourAI is the engineering team, the orchestration layer, and the ongoing build partner â without the overhead. You get private infrastructure, multi-model routing, compliance built in, and a custom AI builder that turns your ideas into features in days, not quarters.<br><br>Most firms that try to build in-house end up with a chatbot wrapper around GPT. You deserve more than that." + closerSnippet;
+  }
+
+  // COMPETITIVE â Jasper / Copy.ai / generic AI
+  if (ql.includes('jasper') || ql.includes('copy.ai') || ql.includes('generic')) {
+    return "<strong>Those tools were built for marketing teams, not law firms.</strong><br><br>Jasper, Copy.ai, and similar platforms are designed for blog posts and ad copy. No access controls, no encryption architecture worth mentioning, no SOC 2, no HIPAA. For an industry where a data breach isn't embarrassing â it's career-ending and firm-ending â they're not even in the conversation.<br><br>YourAI is built for industries where compliance is non-negotiable. Per-organization encryption, immutable audit trails, privilege protections in the architecture. It's a different category entirely." + closerSnippet;
+  }
+
+  // COMPETITIVE â General "how are you different" / "why you"
+  if (ql.includes('different') || ql.includes('compare') || ql.includes('vs') || ql.includes('versus') || ql.includes('competitor') || ql.includes('why you') || ql.includes('why yourai') || ql.includes('stand out')) {
+    return "<strong>Every other platform is a product you adapt to. YourAI is infrastructure that adapts to you.</strong><br><br>Most AI tools â ChatGPT, Copilot, Harvey, Lexis add-ons â ship a fixed product and ask you to work within their constraints. One model, their interface, their feature set.<br><br>YourAI flips that. You get private AWS infrastructure with per-org encryption. You get multi-model routing â OpenAI, Claude, Gemini â best engine for each job. You get a four-role access system that respects your org structure. And inside your dashboard, a custom AI builder that turns your ideas into working features. No code. No developers. No waiting on someone else's roadmap.<br><br>The one-liner version? It's the first platform where your AI actually listens to what you want â and then actually builds it." + closerSnippet;
+  }
+
+  // TECHNICAL DEEP-DIVE â for sophisticated buyers
+  if (ql.includes('technical') || ql.includes('architecture') || ql.includes('aws') || ql.includes('hsm') || ql.includes('pgvector') || ql.includes('aurora') || ql.includes('infrastructure')) {
+    return "<strong>Happy to go deeper. Here's the architecture.</strong><br><br>YourAI is AWS-native â not a SaaS layer on someone else's cloud. Per-organization HSM encryption with isolated keys, meaning even a server breach yields unreadable data. SOC 2 and HIPAA compliant by design, not bolted on after the fact.<br><br>Semantic search runs on pgvector on Aurora â your documents, your context, your results. Only approved enterprise LLMs: OpenAI, Anthropic, Google Gemini. No open-source or local models that introduce unpredictable risk. The Secure Message Portal is immutable â every message locked for compliance, no edits, no deletions. Outputs are structured as Reports and Deliverables, not raw chat logs.<br><br>If your IT team or security counsel wants a deeper walkthrough, we do those all the time." + closerSnippet;
+  }
+
+  // ENCRYPTION â direct answer first, then connect
+  if (ql.includes('encrypt')) {
+    return "<strong>Encryption is basically a lock.</strong> Your data gets scrambled into unreadable code, and only someone with the right key can unscramble it.<br><br>At YourAI, every organization gets its own separate encryption key â isolated on AWS. So even in the extremely unlikely event of a breach, an attacker would get noise, not your client files. It's the difference between leaving case files on a park bench and locking them in a vault that only your firm has the combination to." + closerSnippet;
+  }
+
+  // RAG
+  if (ql.includes('rag') || ql.includes('retrieval')) {
+    return "<strong>RAG stands for Retrieval-Augmented Generation.</strong> In plain terms: instead of the AI guessing from general internet knowledge, it goes and pulls your actual documents first, then writes its answer based on what it found.<br><br>Think of it like this â you have a paralegal with a perfect memory who has read every document your firm has ever produced. You ask a question, and instead of making something up, they walk to the file room, pull the exact relevant pages, and hand you an answer grounded in your real work product. That's RAG. Your data stays in your private vault the entire time â never shared, never trained on." + closerSnippet;
+  }
+
+  // VOICE / DRAFTING / LEARNING
+  if (ql.includes('voice') || ql.includes('learn') || ql.includes('style') || ql.includes('draft')) {
+    return "<strong>Short answer: yes, it actually can.</strong> And not in the 'close enough' way you're probably used to.<br><br>Think of it like training a new associate â except this one never forgets and never leaves. You feed your best work into your private data vault: memos, briefs, client letters, templates. The AI maps your tone, your structure, your formatting â creating a fingerprint of your firm's writing style.<br><br>When you ask for a first draft, it doesn't write from scratch. It writes from <em>your</em> patterns. Partners at pilot firms have told us it's the first time an AI draft didn't need to be completely rewritten. It gets sharper with every document you add." + closerSnippet;
+  }
+
+  // SECURITY / DATA / PRIVACY / PRIVILEGE
+  if (ql.includes('safe') || ql.includes('security') || ql.includes('data') || ql.includes('privacy') || ql.includes('privilege') || ql.includes('protect')) {
+    return "<strong>This is the question you should be asking every AI vendor â and most of them don't want you to.</strong><br><br>Here's the straight answer: your data never leaves your private infrastructure. Zero retention â after the AI processes a request, the input is gone. Not stored, not indexed, not used for training. Ever. Think of it like handing your case files to a paralegal locked inside your office versus dropping them off at a Kinko's and hoping for the best.<br><br>We're SOC 2 compliant, built exclusively on AWS with per-organization encryption and key isolation. Every interaction has a full audit trail â who asked what, when, and what the AI produced. Your ethics committee and your malpractice carrier will both appreciate that." + closerSnippet;
+  }
+
+  // CHATGPT COMPARISON
+  // VECTORS / EMBEDDINGS / HOW IT WORKS
+  if (ql.includes('vector') || ql.includes('embedding') || ql.includes('how does it work') || ql.includes('how it works')) {
+    return "<strong>Vector embeddings are like GPS coordinates for meaning.</strong><br><br>When you upload a document, the AI converts it into a mathematical map â not of the words themselves, but of what those words <em>mean</em>. When you ask a question, the AI finds the documents whose meaning is closest to your question.<br><br>It's like having a librarian who doesn't just search by title, but actually understands what you're looking for and pulls the most relevant pages from across your entire firm's history. All of this happens inside your private vault. Nobody else can see your map, access your library, or benefit from what your firm has built." + closerSnippet;
+  }
+
+  // CUSTOMIZE / FEATURE / WORKFLOW / BUILD
+  if (ql.includes('customize') || ql.includes('feature') || ql.includes('workflow') || ql.includes('build')) {
+    closerDelivered = true; // This IS the closer topic
+    return "<strong>This is what makes YourAI different from everything else you've seen.</strong><br><br>Inside your dashboard, there's a 'Customize YourAI' agent. Think of it as your AI's AI. You tell it what you want in plain English â a contract intake workflow, a deposition summary template, a research pipeline that checks local rules automatically â and it builds it.<br><br>No code. No developers. No IT tickets. No waiting for someone else's product roadmap. You describe what you need, and the platform configures itself. It's the first AI that actually listens to what you want â and then actually builds it.";
+  }
+
+  // LLM / MODELS / CLAUDE
+  if (ql.includes('llm') || ql.includes('model') || ql.includes('claude') || ql.includes('ai model') || ql.includes('gemini') || ql.includes('anthropic')) {
+    return "<strong>An LLM â large language model â is the engine under the hood.</strong> It's what understands language, reasons through problems, and generates text. Think of it like the engine in a car: essential, but not the whole experience.<br><br>YourAI runs the best engines available â Claude by Anthropic, GPT by OpenAI, Gemini by Google. We pick the best model for each job automatically. But the engine isn't what makes this yours. Your private data vault and your custom tuning are the steering wheel. World-class power, but <em>you</em> control where it goes, what it knows, and how it sounds." + closerSnippet;
+  }
+
+  // PRICING / COST / ROI
+  if (ql.includes('cost') || ql.includes('price') || ql.includes('pricing') || ql.includes('expensive') || ql.includes('roi') || ql.includes('worth') || ql.includes('invest')) {
+    return "<strong>Let me frame this the way your managing partner thinks about it.</strong><br><br>If your associates spend even 3 hours a week on tasks this platform handles in minutes â first drafts, research summaries, contract reviews â that's 150+ billable hours a year per attorney. At any reasonable rate, the math gets obvious fast.<br><br>Pilot firms get full access at no cost right now. And when you graduate to a paid plan, you lock in a founding rate that never increases. No per-seat pricing games. We think once you see the time you recover, the pricing conversation takes care of itself." + closerSnippet;
+  }
+
+  // CLIENT WORKSPACE
+  if (ql.includes('client') || ql.includes('workspace')) {
+    return "<strong>Here's the part clients actually love.</strong><br><br>You know those calls that eat your afternoon â the 'just checking in' calls you can't bill for? The Client Workspace handles that. Your clients get a secure portal where they can ask questions about their case anytime â nights, weekends â and get instant, plain-English answers grounded in their actual documents.<br><br>You stay in full control: you set exactly what the AI can access per matter, you can review every response, and the whole thing runs on the same encrypted infrastructure as everything else. Clients feel informed. You get your calendar back.<br><br><a href='https://youraimvp.netlify.app/yourai-legal#for-clients' style='color:var(--accent-light);font-weight:500'>Explore the Client Workspace â</a>" + closerSnippet;
+  }
+
+  // AUDIT / COMPLIANCE / ETHICS
+  if (ql.includes('audit') || ql.includes('compliance') || ql.includes('ethics') || ql.includes('soc') || ql.includes('hipaa')) {
+    return "<strong>Every AI interaction is tracked, timestamped, and attributable.</strong><br><br>That's not marketing â it's architecture. Every prompt, every output, every decision your team makes with AI assistance has a complete audit trail. Who asked what, when they asked it, and what the AI produced. It's the evidence your ethics committee wants to see and your malpractice carrier will ask about.<br><br>We're SOC 2 compliant, HIPAA compliant by design, and built on AWS with per-organization encryption. Privilege protections are baked into the architecture, not bolted on after the fact." + closerSnippet;
+  }
+
+  // JURISDICTION / LOCAL
+  if (ql.includes('jurisdiction') || ql.includes('local') || ql.includes('state') || ql.includes('county') || ql.includes('court')) {
+    return "<strong>Generic AI doesn't know Cook County from King County.</strong> That's the problem with one-size-fits-all tools.<br><br>YourAI tunes to where you actually practice. Local rules, procedural nuances, judicial preferences, filing requirements â all calibrated to your jurisdiction. Not a California-trained model that guesses at your state's rules. Your data vault absorbs your jurisdiction-specific work product, so the system gets sharper for <em>your</em> courts, not the internet's version of courts." + closerSnippet;
+  }
+
+  // INTEGRATION / DMS / CLIO / NETDOCUMENTS
+  if (ql.includes('integrat') || ql.includes('connect') || ql.includes('clio') || ql.includes('netdocument') || ql.includes('imanage') || ql.includes('dms')) {
+    return "<strong>We plug into what you're already using.</strong> No rip-and-replace.<br><br>Your existing document management system, practice management tools, internal repositories â we build the intelligence layer on top. Your data stays where it is. We just make it queryable, searchable, and useful in ways it's never been before.<br><br>The setup is white-glove for pilot firms â we configure everything for your specific stack." + closerSnippet;
+  }
+
+  // DEMO / TRIAL / SIGNUP â trigger lead capture if not already done
+  if (ql.includes('demo') || ql.includes('trial') || ql.includes('sign up') || ql.includes('signup') || ql.includes('start') || ql.includes('try')) {
+    if (!leadCapture.triggered) {
+      triggerLeadCapture();
+      return "<strong>No demo theater. No 45-minute slide deck.</strong><br><br>We'll walk through what your firm's AI would actually look like â based on your practice areas, your workflows, and your specific pain points. It's a real conversation, not a pitch.<br><br>Let me get a few details so we can set that up â " + leadCapture.prompts[0];
+    }
+    return "<strong>No demo theater. No 45-minute slide deck.</strong><br><br>We'll walk through what your firm's AI would actually look like â based on your practice areas, your workflows, and your specific pain points. It's a real conversation, not a pitch.<br><br>Scroll down to the signup form or <a href='#signup' style='color:var(--accent-light);font-weight:500' onclick='event.preventDefault(); document.getElementById(\"signup\").scrollIntoView({behavior:\"smooth\"})'>click here to request your spot</a>. We'll reach out within 24 hours.";
+  }
+
+  // REPORT / DELIVERABLE
+  if (ql.includes('report') || ql.includes('deliverable') || ql.includes('output')) {
+    return "<strong>In YourAI, what the AI produces is called a Report. What you bundle for clients is called a Deliverable.</strong><br><br>Reports are the work product: research memos, contract analyses, draft briefs, case summaries. Deliverables are curated client-facing bundles â think of them as the polished package your client receives, with exactly the context they need and nothing they don't.<br><br>Everything goes through your review. The AI drafts, you decide what ships." + closerSnippet;
+  }
+
+  // ACCESS / ROLES / PERMISSIONS
+  if (ql.includes('access') || ql.includes('role') || ql.includes('permission') || ql.includes('team') || ql.includes('who can')) {
+    return "<strong>You control who sees what. Always.</strong><br><br>YourAI has four role levels: Admin, Manager, Team, and Client. Partners, associates, paralegals, and clients each get scoped access appropriate to their function. Ethical walls stay intact. Matter-level permissions are enforced by architecture â not a policy memo someone forgot to read.<br><br>Think of it like keys to different rooms in your building. Everyone gets into their office. Nobody accidentally walks into a room they shouldn't be in." + closerSnippet;
+  }
+
+  // WHAT IS YOURAI / GENERAL
+  if (ql.includes('what is yourai') || ql.includes('what do you do') || ql.includes('tell me about')) {
+    return "<strong>Honestly? We're not trying to be revolutionary.</strong> Every week there's a new AI platform claiming to change everything. We're not that.<br><br>YourAI is private AI infrastructure built for organizations that take data seriously. For law firms, that means: an AI that knows your practice, your jurisdiction, and your voice â deployed on your own private AWS environment. Your data never trains a public model. Ever.<br><br>We support the best models available â Claude, OpenAI, Gemini â and you control everything: who has access, what the AI knows, how it sounds. Think of it like a private vault that happens to have the world's best research assistant locked inside â and only your team has the key." + closerSnippet;
+  }
+
+  // SECURE MESSAGE / PORTAL
+  if (ql.includes('message') || ql.includes('portal') || ql.includes('communicat')) {
+    return "<strong>We have a Secure Message Portal built in.</strong> Messages are immutable â once sent, they can't be edited or deleted. That's by design, not a bug. For compliance-grade communication, you need a record that's tamper-proof.<br><br>Think of it like certified mail that automatically files itself. Every message is encrypted, timestamped, and attributed. Useful for sensitive client communication, internal matter discussions, or anything your compliance team might want to reference later." + closerSnippet;
+  }
+
+  // FALLBACK â still answers, never deflects
+  var ctx = industryFrames[pageContext] || industryFrames.general;
+  if (pageContext === 'legal') {
+    return "<strong>Good question.</strong> Let me be direct with you.<br><br>YourAI is private AI infrastructure for law firms â not another chatbot, not another tool to bolt onto your stack. It runs the best models available (Claude, OpenAI, Gemini) on <em>your</em> private AWS environment. Your data never leaves. Your AI learns your jurisdiction, your voice, your work product â and compounds into an asset no competitor can replicate.<br><br>The honest pitch? We're not reinventing the wheel. We're just letting you customize it. Ask me about security, how the drafting works, what makes this different from ChatGPT, or what your clients would experience â I'll give you a straight answer." + closerSnippet + captureNudge;
+  }
+  if (pageContext === 'healthcare') {
+    return "<strong>Good question.</strong> Let me be direct.<br><br>YourAI is private AI infrastructure for healthcare organizations. HIPAA compliant by design â not bolted on. Your patient data stays in your private AWS environment. Documentation, clinical workflows, compliance reporting â all powered by AI that never shares your data with anyone.<br><br>Ask me about security, HIPAA, how it handles clinical documentation, or what makes this different from generic AI tools." + closerSnippet + captureNudge;
+  }
+  if (pageContext === 'finance') {
+    return "<strong>Good question.</strong> Let me be direct.<br><br>YourAI is private AI infrastructure for financial services. SEC/FINRA-grade audit trails, per-organization encryption, and zero data retention. Your client data stays in your private AWS environment â never shared, never trained on.<br><br>Ask me about compliance, audit trails, reporting automation, or how we compare to what you're using now." + closerSnippet + captureNudge;
+  }
+  return "<strong>Good question.</strong> Let me be direct.<br><br>YourAI is private AI infrastructure for organizations that take data seriously. It runs the best models available (Claude, OpenAI, Gemini) on <em>your</em> private AWS environment. Your data never leaves. Your AI learns your workflows, your standards, your voice â and compounds into an asset no competitor can replicate.<br><br>Ask me about security, how it works, what makes this different, or what it would look like for your team." + closerSnippet + captureNudge;
+}
+</script>
+
+</body>
+</html>
