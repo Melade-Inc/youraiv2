@@ -1,36 +1,36 @@
-From a8f266daea19e3d6ea145b32161f12ab10b2beee Mon Sep 17 00:00:00 2001
+From 8c6921fc237dca5a97db007f96c90e0e4c03fa46 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
-Date: Wed, 16 Sep 2026 21:08:21 +0000
+Date: Wed, 16 Sep 2026 21:09:52 +0000
 Subject: [PATCH] Install ripgrep for the database CI job
 
-The db job added in #69 runs supabase/tests/run-local.sh, which checks
-each race log with rg. The ubuntu-latest runner image does not ship
-ripgrep, so the job failed after the expected VERSION_CONFLICT with
-"rg: command not found". Install ripgrep in its own step, independent
-of whether PostgreSQL 17 is already present on the runner.
+supabase/tests/run-local.sh matches expected error codes with rg, which the
+GitHub runner image does not ship. Install it in the db job when absent so
+the suite runs on the runner exactly as it does locally.
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_0193fVPcTrjEFef6JTdVCFFj
+Claude-Session: https://claude.ai/code/session_017twst4MFpEXdY2hjihXFdf
 ---
- .github/workflows/ci.yml | 5 +++++
- 1 file changed, 5 insertions(+)
+ .github/workflows/ci.yml | 7 +++++++
+ 1 file changed, 7 insertions(+)
 
 diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
-index 26fd92c..a5626c8 100644
+index 26fd92c..19524f6 100644
 --- a/.github/workflows/ci.yml
 +++ b/.github/workflows/ci.yml
-@@ -36,6 +36,11 @@ jobs:
-           node-version: 24
-           cache: pnpm
-       - run: pnpm install --frozen-lockfile
-+      - name: Install ripgrep; run-local.sh uses rg to inspect the race logs
+@@ -45,6 +45,13 @@ jobs:
+             sudo apt-get install -y --no-install-recommends postgresql-17
+           fi
+           "$PG_BIN/postgres" --version
++      - name: Install ripgrep; supabase/tests/run-local.sh matches expected errors with rg
 +        run: |
-+          sudo apt-get update
-+          sudo apt-get install -y --no-install-recommends ripgrep
-+          rg --version
-       - name: Install PostgreSQL 17 from the PGDG repository unless the runner image already has it
-         run: |
-           if [ ! -x "$PG_BIN/initdb" ]; then
++          if ! command -v rg >/dev/null 2>&1; then
++            sudo apt-get update
++            sudo apt-get install -y --no-install-recommends ripgrep
++          fi
++          rg --version | head -1
+       # Disposable loopback cluster: migrations, RLS, transactional guards and
+       # every concurrent-*.sql race in supabase/tests and tests/sql.
+       - run: pnpm test:db
 -- 
 2.43.0
 
