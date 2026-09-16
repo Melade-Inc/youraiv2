@@ -1,0 +1,2229 @@
+From d15ff601ba7bfb5d6844f1c97db59be3d4562806 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 16 Sep 2026 21:02:02 +0000
+Subject: [PATCH] Add the public CLI and skill release pipeline
+
+Port the reviewed distribution pipeline from the integration branch onto
+main's CLI (doctor, init, upload, publish, guarded go, connect, local stdio
+mcp) so the CLI can ship as the npm package live-link and the public skill
+repository Melade-Inc/live-link-skill.
+
+- scripts/release: esbuild bundle of packages/cli into one dependency-free
+  ESM file; bundle input audit that admits only the named owned sources and
+  files of eight reviewed third-party packages (Zod 3.25.76, the MCP SDK
+  1.30.0 and its schema dependencies), each pinned by version, license and
+  license-file SHA-256; public tree builder (skill, publish.sh/connect.sh
+  wrappers, installer, VERSION, publish workflow); offline tree verifier;
+  read-only published-package inspector.
+- packages/cli: Node gate before any import (22.12.0; main's CLI has no
+  node:sqlite), version constant, Apache-2.0 metadata, LICENSE, NOTICE and a
+  composed THIRD_PARTY_NOTICES; doctor now reports cliVersion, nodeSupported
+  and credentialSource.
+- packages/agent-kit: distribution describes package, version, node floor,
+  skill and install command; cliCommand() is null while unpublished and every
+  guide renders its honest variant from that state; renderGuide accepts a
+  registry override for tests.
+- CI runs tests/ops; release-cli.yml builds, verifies and pushes the public
+  tree on a cli-v* tag. Runbook in docs/operations/CLI_RELEASE.md.
+
+Verified on Node 24.21: workspace typecheck, eslint --max-warnings 0, 249
+unit tests, 20 CLI process tests, 45 ops tests, both production builds; the
+offline dry run passes (16 public files, 6 package files, 881,780-byte
+bundle, no runtime imports outside node:*). Discovery stays unpublished;
+no npm publication, tag or hosted change.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017twst4MFpEXdY2hjihXFdf
+---
+ .github/workflows/ci.yml                     |   1 +
+ .github/workflows/release-cli.yml            |  59 +++++
+ docs/operations/CLI_RELEASE.md               |  68 ++++++
+ docs/operations/DISTRIBUTION_DRY_RUN.md      |  84 ++++++++
+ package.json                                 |  10 +-
+ packages/agent-kit/src/index.d.ts            |   5 +-
+ packages/agent-kit/src/index.js              |  34 ++-
+ packages/cli/LICENSE                         | 202 +++++++++++++++++
+ packages/cli/NOTICE                          |  13 ++
+ packages/cli/THIRD_PARTY_NOTICES             | 216 +++++++++++++++++++
+ packages/cli/bin/live-link.mjs               |  21 +-
+ packages/cli/package.json                    |  10 +-
+ packages/cli/src/index.mjs                   |   2 +-
+ packages/cli/src/init.mjs                    |   4 +-
+ packages/cli/src/node-version.mjs            |  22 ++
+ packages/cli/src/version.mjs                 |   6 +
+ pnpm-lock.yaml                               |   4 +-
+ scripts/release/build-cli.mjs                | 138 ++++++++++++
+ scripts/release/build-distribution.mjs       | 134 ++++++++++++
+ scripts/release/published-package.mjs        |  85 ++++++++
+ scripts/release/release-licenses.mjs         |  54 +++++
+ scripts/release/verify-distribution-tree.mjs | 173 +++++++++++++++
+ scripts/release/verify-distribution.mjs      |  92 ++++++++
+ tests/ops/build-cli.test.mjs                 | 189 ++++++++++++++++
+ tests/ops/published-package.test.mjs         |  83 +++++++
+ tests/ops/verify-distribution.test.mjs       | 200 +++++++++++++++++
+ 26 files changed, 1884 insertions(+), 25 deletions(-)
+ create mode 100644 .github/workflows/release-cli.yml
+ create mode 100644 docs/operations/CLI_RELEASE.md
+ create mode 100644 docs/operations/DISTRIBUTION_DRY_RUN.md
+ create mode 100644 packages/cli/LICENSE
+ create mode 100644 packages/cli/NOTICE
+ create mode 100644 packages/cli/THIRD_PARTY_NOTICES
+ create mode 100644 packages/cli/src/node-version.mjs
+ create mode 100644 packages/cli/src/version.mjs
+ create mode 100644 scripts/release/build-cli.mjs
+ create mode 100644 scripts/release/build-distribution.mjs
+ create mode 100644 scripts/release/published-package.mjs
+ create mode 100644 scripts/release/release-licenses.mjs
+ create mode 100644 scripts/release/verify-distribution-tree.mjs
+ create mode 100644 scripts/release/verify-distribution.mjs
+ create mode 100644 tests/ops/build-cli.test.mjs
+ create mode 100644 tests/ops/published-package.test.mjs
+ create mode 100644 tests/ops/verify-distribution.test.mjs
+
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 1c852cd..142143e 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -20,4 +20,5 @@ jobs:
+       - run: pnpm typecheck
+       - run: pnpm test
+       - run: pnpm --filter @live-link/cli test
++      - run: node --test tests/ops/*.test.mjs
+       - run: pnpm build
+diff --git a/.github/workflows/release-cli.yml b/.github/workflows/release-cli.yml
+new file mode 100644
+index 0000000..3793529
+--- /dev/null
++++ b/.github/workflows/release-cli.yml
+@@ -0,0 +1,59 @@
++name: Release Live.link CLI
++# Tag the reviewed commit as cli-v<version> (matching packages/cli/package.json) to build the
++# public distribution tree and push it, with tag v<version>, to Melade-Inc/live-link-skill.
++# That repository's own publish.yml then publishes cli/ to npm with provenance.
++on:
++  push:
++    tags: ['cli-v*']
++permissions:
++  contents: read
++jobs:
++  release:
++    runs-on: ubuntu-latest
++    steps:
++      - name: Require the distribution repository token
++        env:
++          DISTRIBUTION_REPO_TOKEN: ${{ secrets.DISTRIBUTION_REPO_TOKEN }}
++        run: |
++          if [ -z "${DISTRIBUTION_REPO_TOKEN}" ]; then
++            echo "::error::DISTRIBUTION_REPO_TOKEN is not configured. Add a fine-grained token with contents:write on Melade-Inc/live-link-skill as a repository secret, then re-run this tag." >&2
++            exit 1
++          fi
++      - uses: actions/checkout@v4
++      - uses: pnpm/action-setup@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 24.20.0
++          cache: pnpm
++      - run: pnpm install --frozen-lockfile
++      - name: Check that the tag matches packages/cli/package.json
++        run: |
++          VERSION="$(node -p 'require("./packages/cli/package.json").version')"
++          test "${GITHUB_REF_NAME}" = "cli-v${VERSION}" || { echo "::error::Tag ${GITHUB_REF_NAME} does not match packages/cli version ${VERSION}" >&2; exit 1; }
++      - run: pnpm --filter @live-link/cli test
++      - run: node --test tests/ops/build-cli.test.mjs
++      - run: pnpm release:build
++      - name: Verify exact distribution tree and offline npm tarball
++        run: node scripts/release/verify-distribution.mjs --dry-run dist/distribution
++      - name: Push the distribution tree and tag
++        env:
++          DISTRIBUTION_REPO_TOKEN: ${{ secrets.DISTRIBUTION_REPO_TOKEN }}
++        run: |
++          set -eu
++          VERSION="$(cat dist/distribution/VERSION)"
++          REMOTE="https://x-access-token:${DISTRIBUTION_REPO_TOKEN}@github.com/Melade-Inc/live-link-skill.git"
++          if git ls-remote --exit-code --tags "${REMOTE}" "refs/tags/v${VERSION}" >/dev/null 2>&1; then
++            echo "::error::Tag v${VERSION} already exists in Melade-Inc/live-link-skill; bump packages/cli/package.json before releasing again." >&2
++            exit 1
++          fi
++          rm -rf target
++          git clone --depth 1 "${REMOTE}" target || { mkdir target && git -C target init -b main; }
++          find target -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
++          cp -R dist/distribution/. target/
++          cd target
++          git config user.name "live-link-release[bot]"
++          git config user.email "release@live.link"
++          git add -A
++          git commit -m "live-link ${VERSION}" --allow-empty
++          git tag "v${VERSION}"
++          git push "${REMOTE}" HEAD:main "v${VERSION}"
+diff --git a/docs/operations/CLI_RELEASE.md b/docs/operations/CLI_RELEASE.md
+new file mode 100644
+index 0000000..454e98d
+--- /dev/null
++++ b/docs/operations/CLI_RELEASE.md
+@@ -0,0 +1,68 @@
++# Public CLI and skill release
++
++Ships the reviewed `packages/cli` as the npm package `live-link` and the public skill repository
++`Melade-Inc/live-link-skill`, then flips discovery to `published`. Source: `scripts/release/`,
++`.github/workflows/release-cli.yml`, the generated `.github/workflows/publish.yml` in the public tree.
++Offline evidence and limits: [DISTRIBUTION_DRY_RUN.md](DISTRIBUTION_DRY_RUN.md).
++
++## One-time setup (Ryan)
++
++1. npm account with 2FA. As of 2026-09-16 the name `live-link` is unclaimed (registry 404); the first
++   publish claims it. Fallback name if that changes: `@melade/live-link` (update `packageName` in
++   `scripts/release/build-cli.mjs` and the tarball URL in `verify-distribution.mjs`).
++2. Public repository `Melade-Inc/live-link-skill`, empty, default branch `main`. It must be public:
++   `npx skills add` on a private repository needs the reader's own GitHub auth.
++3. Secrets, never in git:
++   - `DISTRIBUTION_REPO_TOKEN` in `Melade-Inc/live-link`: fine-grained token, `contents: write` on
++     `Melade-Inc/live-link-skill` only. Used by `release-cli.yml` to push the generated tree and tag.
++   - `NPM_TOKEN` in `Melade-Inc/live-link-skill`: npm granular access token with publish rights for
++     `live-link`, or configure npm trusted publishing for that repository's `publish.yml` and drop the
++     token. Used by the generated `publish.yml` (`npm publish --provenance --access public`).
++4. Optional: install the Claude GitHub App on the skill repository so reviews can read it.
++
++## Release
++
++From `main` at the reviewed commit, with `packages/cli/package.json` and `packages/cli/src/version.mjs`
++agreeing on the pin:
++
++```sh
++pnpm release:build
++node scripts/release/verify-distribution.mjs --dry-run dist/distribution     # must print ok: true
++git tag cli-v0.1.0 && git push origin cli-v0.1.0
++```
++
++`release-cli.yml` rebuilds and re-verifies on the runner, then pushes the tree and tag `v0.1.0` to the
++skill repository. Its `publish.yml` verifies every file hash and mode again, smoke-tests the bundle,
++and publishes to npm with provenance. A tag that already exists in the skill repository fails the
++release; bump the pin instead of re-tagging.
++
++## Verify the published release
++
++```sh
++node scripts/release/verify-distribution.mjs 0.1.0            # npm metadata, tag, skill, notices, tarball bytes
++npx -y live-link@0.1.0 doctor                                  # from a clean container, no repository checkout
++npx skills add Melade-Inc/live-link-skill --skill live-link --list
++```
++
++All three must pass before the flip.
++
++## Flip discovery to published
++
++Merge the prepared "publish CLI discovery" change: `registry.distribution` becomes
++`{ status: 'published', version: '0.1.0', install: 'npx -y live-link@0.1.0', skill: 'npx skills add …' }`,
++`Public CLI installation` leaves the `unavailable` list, and CI gains the `published-cli` job that runs
++the pinned package from the registry. Deploy management; confirm `https://live.link/start.md` and
++`/.well-known/agent.json` show the install command. The flip PR cannot merge before publication: its
++CI job fails while the pin is not on npm.
++
++## Rollback
++
++Never `npm unpublish` after the first 72 hours. `npm deprecate live-link@0.1.0 "<reason>"`, revert the
++flip PR so guides render the unpublished variant again, deploy management. The skill repository tag
++stays as history.
++
++## Next version
++
++Bump `packages/cli/package.json` and `packages/cli/src/version.mjs` together, re-run the dry run, tag
++`cli-v<version>`, verify, then update `registry.distribution.version` and `install` in the same PR that
++records the verification.
+diff --git a/docs/operations/DISTRIBUTION_DRY_RUN.md b/docs/operations/DISTRIBUTION_DRY_RUN.md
+new file mode 100644
+index 0000000..2a1acc4
+--- /dev/null
++++ b/docs/operations/DISTRIBUTION_DRY_RUN.md
+@@ -0,0 +1,84 @@
++# Local public-distribution dry run
++
++Verifies the generated public repository tree and npm artifact offline before any release. This
++rehearsal does not publish npm packages, create GitHub tags, change discovery or establish host
++acceptance. Release steps and secrets are in [CLI_RELEASE.md](CLI_RELEASE.md).
++
++Use Node 24 for the workspace (`.node-version`); the published CLI itself runs on Node 22.12 or newer.
++
++```sh
++pnpm release:build
++node scripts/release/verify-distribution.mjs --dry-run dist/distribution
++```
++
++An optional `--pin 0.1.0` after the directory checks an explicit exact pin against the current CLI
++source. The input must be the pristine generated public tree; `.git`, added files, symlinks and empty
++extra directories are not accepted. The verifier reads the tree without modifying it, captures regular
++files through no-follow descriptors, bounds actual bytes read, and rejects changed identity, size, time,
++mode or directory identity. It rebuilds the expected output from the current reviewed source into its
++own temporary directory and checks every file's bytes, SHA-256 and executable bit, binding `VERSION`,
++bundle, package manifest, public skill, wrappers, installer, README, license notices and release
++workflow to the same source.
++
++The bundle builder rejects local machine paths, workspace imports, non-Node runtime dependencies and an
++eager `node:sqlite` import. Its input audit admits only the fourteen named owned CLI sources plus
++`packages/agent-kit/src/index.js`, and files of the eight reviewed third-party packages listed in
++`scripts/release/release-licenses.mjs` (Zod 3.25.76, `@modelcontextprotocol/sdk` 1.30.0,
++zod-to-json-schema, ajv, ajv-formats, fast-deep-equal, json-schema-traverse, fast-uri), each checked
++against its pinned version, license identifier and license-file SHA-256 in the installed workspace.
++`THIRD_PARTY_NOTICES` must equal the exact composition of those eight licenses. An unexpected private
++module, package or data file, or a changed license, stops the build.
++
++After the tree matches, the verifier copies the inspected CLI bytes into a fresh temporary package,
++runs `npm pack --offline --ignore-scripts` with empty npm configuration and an isolated home, and
++compares the extracted archive against the approved package files. It installs the inspected tarball
++into a temporary prefix with offline, script-disabled npm and executes the installed `live-link --help`.
++The extracted bundle runs `--help` and an unconfigured `doctor` against a closed loopback port from an
++empty directory without repository `node_modules`; the expected state is no credential and discovery
++unavailable. Temporary directories are removed on success and failure.
++
++The JSON result separates the evidence: `mode: "dry-run"` and `ok: true` mean local integrity, offline
++packing and CLI smoke passed; `releaseReady` stays `false`; `release.license.selected` is `Apache-2.0`
++and its status becomes `selected-artifact-verified` only after the tree and packed files pass; published
++npm, tag and skill checks remain `not-checked`. Local success is not evidence that a public release
++exists, and is not a named-host acceptance.
++
++After a release, run published verification from the exact reviewed source and version:
++
++```sh
++node scripts/release/verify-distribution.mjs 0.1.0
++```
++
++That mode reads the exact npm registry version metadata (name, version, Apache-2.0, tarball URL),
++resolves the public tag to a commit, reads the skill and both root and `cli/` license notices from that
++immutable commit, and checks the npm tarball's SHA-512 integrity and every file's bytes and mode against
++the locally rebuilt artifact, with no missing, duplicate or extra files. Network reads prohibit
++redirects and are bounded: 128 KiB per metadata, skill or notice response, 8 MiB compressed package,
++16 MiB inflated tar, 32 tar entries. Inspection happens in memory; downloaded code is never extracted
++to disk or executed.
++
++Tests: `node --test tests/ops/build-cli.test.mjs tests/ops/verify-distribution.test.mjs
++tests/ops/published-package.test.mjs`, included in CI's verify job as `node --test tests/ops/*.test.mjs`.
++
++## Scoped Apache artifact acceptance
++
++The full standard Apache-2.0 text lives in `packages/cli/LICENSE` (SHA-256
++`cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30`, compared byte-for-byte with the
++Apache Software Foundation endpoint on September 7, 2026), copied byte-for-byte to `cli/LICENSE` and
++the public-repository root. `NOTICE` identifies Melade, Inc. and the licensed work: `packages/cli/` and
++exactly `packages/agent-kit/src/index.js`, plus the generated public files. `THIRD_PARTY_NOTICES`
++retains the complete license text of each bundled package. These files do not license customer
++creations or private platform source; the agent-kit package as a whole retains its private scope, and no
++repository-root license is added. The monorepo CLI remains `private: true`; machine-readable
++distribution remains `unpublished` until the release runbook's flip step.
++
++## Evidence
++
++September 16, 2026, Node 24.21.0, from `main` after the guarded-publication release: the workspace
++typecheck, `eslint . --max-warnings 0`, 249 unit tests in 23 files, 20 CLI process tests and the three
++ops suites pass. `pnpm release:build` produces 16 public files and a 6-file npm package; the bundle is
++881,780 bytes with 14 owned inputs and inputs from the eight reviewed packages, no runtime imports
++outside `node:*`. The offline dry run passes: tree match, offline pack, offline install, `--help`,
++`doctor` (credentials none, discovery unavailable). `releaseReady: false`; no npm publication, tag, flag
++change or hosted change occurred. This is source and local artifact evidence, not host or hosted
++acceptance.
+diff --git a/package.json b/package.json
+index d128144..8b1b8db 100644
+--- a/package.json
++++ b/package.json
+@@ -16,14 +16,16 @@
+     "dev:delivery": "pnpm --filter @live-link/delivery dev",
+     "test:api": "node tests/integration/api-smoke.mjs",
+     "test:db": "bash supabase/tests/run-local.sh",
+-    "test:auth": "node tests/integration/session-revocation-smoke.mjs"
++    "test:auth": "node tests/integration/session-revocation-smoke.mjs",
++    "release:build": "node scripts/release/build-distribution.mjs"
+   },
+   "devDependencies": {
+-    "typescript": "^5.9.3",
+-    "vitest": "^4.0.18",
+     "@playwright/test": "^1.58.2",
+     "@types/node": "^24.10.0",
++    "esbuild": "0.28.2",
+     "eslint": "^9.39.1",
+-    "typescript-eslint": "^8.54.0"
++    "typescript": "^5.9.3",
++    "typescript-eslint": "^8.54.0",
++    "vitest": "^4.0.18"
+   }
+ }
+diff --git a/packages/agent-kit/src/index.d.ts b/packages/agent-kit/src/index.d.ts
+index 97a8c89..15ed492 100644
+--- a/packages/agent-kit/src/index.d.ts
++++ b/packages/agent-kit/src/index.d.ts
+@@ -1,10 +1,11 @@
+ export interface Capability { id: string; label: string; method: string; path: string; scope: string }
+ export const registry: Readonly<{
+   name: string; version: string; start: string; api: string; setup: string; openapi: string;
+-  distribution: {status: string; install: null};
++  distribution: {status: 'unpublished' | 'published'; package: string; version: string | null; install: string | null; node: string; skill: string | null; installScript: string | null};
+   authentication: {type: string; environment: string; scopes: string[]};
+   limits: {decodedBytesPerVersion: number; requestBytes: number; filesPerVersion: number; documentBlockBytes: number};
+   capabilities: Capability[]; hosts: {name: string; route: string; status: string}[]; unavailable: string[];
+ }>;
+ export function agentDocument(): { capabilities: string[]; [key: string]: unknown };
+-export function renderGuide(kind?: string): string;
++export function cliCommand(options?: { registry?: typeof registry }): string | null;
++export function renderGuide(kind?: string, options?: { registry?: typeof registry }): string;
+diff --git a/packages/agent-kit/src/index.js b/packages/agent-kit/src/index.js
+index 1ac4991..f5d6a6b 100644
+--- a/packages/agent-kit/src/index.js
++++ b/packages/agent-kit/src/index.js
+@@ -3,7 +3,8 @@ export const registry = Object.freeze({
+   name: 'Live.link', version: '0.1.0',
+   start: 'https://live.link/start', api: 'https://app.live.link/api/v1',
+   setup: 'https://app.live.link/settings', openapi: 'https://app.live.link/api/v1/openapi',
+-  distribution: { status: 'unpublished', install: null },
++  // Flip to published only after a verified public npm release; every guide renders its honest variant from this state.
++  distribution: { status: 'unpublished', package: 'live-link', version: null, install: null, node: '>=22.12.0', skill: null, installScript: null },
+   authentication: { type: 'bearer', environment: 'LIVE_LINK_TOKEN', scopes: ['artifact:read', 'artifact:write', 'artifact:publish'] },
+   limits: { decodedBytesPerVersion: 3145728, requestBytes: 4194304, filesPerVersion: 30, documentBlockBytes: 524288 },
+   capabilities: [
+@@ -29,6 +30,21 @@ export const registry = Object.freeze({
+   unavailable: ['Hosted MCP', 'Agent OAuth / automatic authorization', 'Public CLI installation', 'Staged or resumable byte uploads', 'Arbitrary customer backend hosting'],
+ });
+ 
++/** The published CLI invocation, or null while distribution is unpublished so no page or guide can invent an install command. */
++export function cliCommand({ registry: source = registry } = {}) {
++  const d = source.distribution;
++  if (d.status !== 'published') return null;
++  return d.install ?? `npx -y ${d.package}@${d.version ?? 'latest'}`;
++}
++
++/** Honest CLI availability sentences for every guide, derived from distribution state. */
++function cliAvailability(source) {
++  const cli = cliCommand({ registry: source });
++  if (!cli) return 'Public distribution is not yet published. A reviewed source checkout includes packages/cli/bin/live-link.mjs; run node packages/cli/bin/live-link.mjs --help from that checkout. Do not ask users to clone the private monorepo or use an unverified npm package.';
++  const skill = source.distribution.skill ? ` Persistent skill for coding agents: \`${source.distribution.skill}\`.` : '';
++  return `Published CLI, Node ${source.distribution.node.replace(/^>=/, '')} or newer: \`${cli} --help\`.${skill} Verify the pin before use; never run an unpinned or unverified package.`;
++}
++
+ export function agentDocument() {
+   return {
+     name: registry.name, version: registry.version,
+@@ -48,14 +64,14 @@ Build frontend source locally in an isolated environment before upload. Only bui
+ 
+ Create and save are private. Obtain explicit publication authority and audience before publishing. Preserve the first assigned slug on revisions and restores, including after expiry or revocation. Failed writes must leave the existing live version intact. Keep the latest draft and publication pointers plus publication revision for concurrency checks. Never automatically revive a revoked or expired link or change its audience. Preview URLs contain single-use credentials: do not persist or log them. Logout or credential revocation must end private access.`;
+ 
+-export function renderGuide(kind = 'start') {
+-  const links = `- [Start](${registry.start})\n- [Publishing API](${registry.openapi})\n- [Create a scoped credential](${registry.setup})\n- [Capabilities](https://app.live.link/.well-known/agent.json)\n- [Agent instructions](https://live.link/AGENTS.md)\n- [Skill](https://live.link/SKILL.md)\n- [Architecture](https://live.link/architecture.md)`;
+-  const capabilities = registry.capabilities.map(c => `| ${c.label} | ${c.method} ${c.path} | ${c.scope} |`).join('\n');
+-  const compatibility = registry.hosts.map(h => `| ${h.name} | ${h.route} | ${h.status} |`).join('\n');
+-  const limits = `Current implemented transport: ${registry.limits.filesPerVersion} files, ${registry.limits.decodedBytesPerVersion} decoded bytes per version, ${registry.limits.requestBytes} UTF-8 JSON request bytes, and ${registry.limits.documentBlockBytes} structured document-block bytes. Planned larger quotas are not active on this transport.`;
+-  if (kind === 'llms') return `# Live.link\n\nCreate, preview and explicitly publish apps and documents.\n\n${links}\n\nAuthentication: scoped bearer API. Hosted MCP and agent OAuth are unavailable. Public CLI distribution is not yet published; do not invent an npm install command.\n\n${limits}\n`;
++export function renderGuide(kind = 'start', { registry: source = registry } = {}) {
++  const links = `- [Start](${source.start})\n- [Publishing API](${source.openapi})\n- [Create a scoped credential](${source.setup})\n- [Capabilities](https://app.live.link/.well-known/agent.json)\n- [Agent instructions](https://live.link/AGENTS.md)\n- [Skill](https://live.link/SKILL.md)\n- [Architecture](https://live.link/architecture.md)`;
++  const capabilities = source.capabilities.map(c => `| ${c.label} | ${c.method} ${c.path} | ${c.scope} |`).join('\n');
++  const compatibility = source.hosts.map(h => `| ${h.name} | ${h.route} | ${h.status} |`).join('\n');
++  const limits = `Current implemented transport: ${source.limits.filesPerVersion} files, ${source.limits.decodedBytesPerVersion} decoded bytes per version, ${source.limits.requestBytes} UTF-8 JSON request bytes, and ${source.limits.documentBlockBytes} structured document-block bytes. Planned larger quotas are not active on this transport.`;
++  if (kind === 'llms') return `# Live.link\n\nCreate, preview and explicitly publish apps and documents.\n\n${links}\n\nAuthentication: scoped bearer API. Hosted MCP and agent OAuth are unavailable. ${cliCommand({ registry: source }) ? `Published CLI: \`${cliCommand({ registry: source })}\`.` : 'Public CLI distribution is not yet published; do not invent an npm install command.'}\n\n${limits}\n`;
+   if (kind === 'architecture') return `# Live.link architecture for consumers\n\nManagement: https://app.live.link. Reader apps execute on isolated artifact origins, never management origins. Supabase owns workspace authorization, immutable versions, publication pointers and exact-session revocation. Vercel Workflows executes durable operations.\n\nFlow: local built files → private artifact → immutable version → review → explicit audience and publication → same-link revise / restore / revoke.\n\n${boundaries}\n\n## Local project map\n\nRecord your source directory, build command, output directory, entrypoint, declared external dependencies, artifact ID and acceptance criteria in your project's own architecture notes. Do not replace existing architecture or AGENTS.md instructions.\n\n${limits}\n\n${links}\n`;
+-  const workflow = `## Supported HTTP workflow\n\nBase: ${registry.api}. Send Authorization: Bearer from the secret environment and Content-Type: application/json. Never forward authorization to redirects, artifact origins or other hosts.\n\n1. POST /artifacts with {title,kind,idempotencyKey}. Keep artifact.id.\n2. POST /artifacts/:id/versions with {manifest,baseVersionId:null,idempotencyKey}. Use kind app or file for built files. Each manifest file has {path,mediaType,encoding,content,sha256}; encoding is utf8 or base64. Preserve relative nested paths. The OpenAPI describes structured documents separately.\n3. Review in the dashboard. POST /artifacts/:id/preview with {versionId} can mint a single-use preview URL for a trusted browser.\n4. After approval, GET /artifacts/:id and require artifact.publicationGuardVersion=1. For the first publication POST /artifacts/:id/publish with {versionId,slug,audience,recipients,expiresAt:null,expectedPublishedVersionId:null,expectedPublicationRevision:null}. The guarded path requires read plus publish scopes. If the guard is missing, stop; never retry without it. Audience is owner, recipients (requires email addresses), or public. A successful response contains publication.url.\n5. For revisions GET /artifacts/:id, save with artifact.latestVersionId as baseVersionId, and publish with the exact reviewed artifact.publication.versionId as expectedPublishedVersionId and artifact.publication.revision as expectedPublicationRevision. Keep the same artifact, slug and audience. If the link was revoked, expired or changed outside this action, stop for review rather than reviving it. Restore an earlier compatible version only with explicit authority and both current guards. POST /artifacts/:id/revoke turns off access.\n\nPersist the reviewed publish body including both guards before dispatch; retry uncertain publication with that unchanged body, never refresh guards automatically. Persist a unique idempotency key before create/save. Retry uncertain writes with the exact body and same key. After 409, inspect the current draft/live pointers before choosing a new action; do not silently overwrite concurrent work. Errors use {error:{code,message,traceId,details?}}. Keep only the trace ID for support. On 401/403 reconnect or correct scope; on 413 shrink content; on 429/503 wait or resolve capacity/provider availability.\n\n## CLI availability\n\nPublic distribution is not yet published. A reviewed source checkout includes packages/cli/bin/live-link.mjs; run node packages/cli/bin/live-link.mjs --help from that checkout. Do not ask users to clone the private monorepo or use an unverified npm package. The reviewed source CLI supports doctor, init, upload, guarded go, connect and local stdio mcp. go saves privately by default; after approval go <built-folder> --yes --slug <name> --audience <owner|recipients|public> publishes, and subsequent approved go <built-folder> --yes updates the same link. Use go for guarded publishing; the legacy standalone publish command is not the guarded flow. Local stdio MCP is not a hosted cloud connector. Upload recovery resumes an uncertain atomic request; it is not a staged byte-upload service.\n\n## Host compatibility\n\n| Host | Current path | Verification |\n| --- | --- | --- |\n${compatibility}\n\nA terminal-capable host can use the reviewed source CLI once authorized. A read-only chat can provide the user with ${registry.start} to finish in the dashboard. Hosted MCP and agent OAuth are unavailable until implemented and verified.\n`;
++  const workflow = `## Supported HTTP workflow\n\nBase: ${source.api}. Send Authorization: Bearer from the secret environment and Content-Type: application/json. Never forward authorization to redirects, artifact origins or other hosts.\n\n1. POST /artifacts with {title,kind,idempotencyKey}. Keep artifact.id.\n2. POST /artifacts/:id/versions with {manifest,baseVersionId:null,idempotencyKey}. Use kind app or file for built files. Each manifest file has {path,mediaType,encoding,content,sha256}; encoding is utf8 or base64. Preserve relative nested paths. The OpenAPI describes structured documents separately.\n3. Review in the dashboard. POST /artifacts/:id/preview with {versionId} can mint a single-use preview URL for a trusted browser.\n4. After approval, GET /artifacts/:id and require artifact.publicationGuardVersion=1. For the first publication POST /artifacts/:id/publish with {versionId,slug,audience,recipients,expiresAt:null,expectedPublishedVersionId:null,expectedPublicationRevision:null}. The guarded path requires read plus publish scopes. If the guard is missing, stop; never retry without it. Audience is owner, recipients (requires email addresses), or public. A successful response contains publication.url.\n5. For revisions GET /artifacts/:id, save with artifact.latestVersionId as baseVersionId, and publish with the exact reviewed artifact.publication.versionId as expectedPublishedVersionId and artifact.publication.revision as expectedPublicationRevision. Keep the same artifact, slug and audience. If the link was revoked, expired or changed outside this action, stop for review rather than reviving it. Restore an earlier compatible version only with explicit authority and both current guards. POST /artifacts/:id/revoke turns off access.\n\nPersist the reviewed publish body including both guards before dispatch; retry uncertain publication with that unchanged body, never refresh guards automatically. Persist a unique idempotency key before create/save. Retry uncertain writes with the exact body and same key. After 409, inspect the current draft/live pointers before choosing a new action; do not silently overwrite concurrent work. Errors use {error:{code,message,traceId,details?}}. Keep only the trace ID for support. On 401/403 reconnect or correct scope; on 413 shrink content; on 429/503 wait or resolve capacity/provider availability.\n\n## CLI availability\n\n${cliAvailability(source)} The CLI supports doctor, init, upload, guarded go, connect and local stdio mcp. go saves privately by default; after approval go <built-folder> --yes --slug <name> --audience <owner|recipients|public> publishes, and subsequent approved go <built-folder> --yes updates the same link. Use go for guarded publishing; the legacy standalone publish command is not the guarded flow. Local stdio MCP is not a hosted cloud connector. Upload recovery resumes an uncertain atomic request; it is not a staged byte-upload service.\n\n## Host compatibility\n\n| Host | Current path | Verification |\n| --- | --- | --- |\n${compatibility}\n\nA terminal-capable host can use the reviewed source CLI once authorized. A read-only chat can provide the user with ${source.start} to finish in the dashboard. Hosted MCP and agent OAuth are unavailable until implemented and verified.\n`;
+   const title = kind === 'skill' ? '---\nname: live-link\ndescription: Publish reviewed built frontend files or documents through the scoped Live.link HTTP API.\n---\n\n# Live.link publishing skill' : kind === 'agents' ? '# Live.link consumer agent instructions' : '# Start with Live.link';
+-  return `${title}\n\nCreate a useful app or document, preview it privately, then publish one link. This guide describes implemented capabilities.\n\n${links}\n\n## Authority and local instructions\n\n${boundaries}\n\nRead existing repository instructions first. Add project-specific outcome, architecture and acceptance notes alongside them; never overwrite them during setup. An explicit user request and the host's permission controls remain authoritative.\n\n${workflow}\n## Implemented capabilities\n\n| Capability | Endpoint | Scope |\n| --- | --- | --- |\n${capabilities}\n\n## Current limits\n\n${limits}\n\nNot available: ${registry.unavailable.join('; ')}.\n`;
++  return `${title}\n\nCreate a useful app or document, preview it privately, then publish one link. This guide describes implemented capabilities.\n\n${links}\n\n## Authority and local instructions\n\n${boundaries}\n\nRead existing repository instructions first. Add project-specific outcome, architecture and acceptance notes alongside them; never overwrite them during setup. An explicit user request and the host's permission controls remain authoritative.\n\n${workflow}\n## Implemented capabilities\n\n| Capability | Endpoint | Scope |\n| --- | --- | --- |\n${capabilities}\n\n## Current limits\n\n${limits}\n\nNot available: ${source.unavailable.join('; ')}.\n`;
+ }
+diff --git a/packages/cli/LICENSE b/packages/cli/LICENSE
+new file mode 100644
+index 0000000..d645695
+--- /dev/null
++++ b/packages/cli/LICENSE
+@@ -0,0 +1,202 @@
++
++                                 Apache License
++                           Version 2.0, January 2004
++                        http://www.apache.org/licenses/
++
++   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
++
++   1. Definitions.
++
++      "License" shall mean the terms and conditions for use, reproduction,
++      and distribution as defined by Sections 1 through 9 of this document.
++
++      "Licensor" shall mean the copyright owner or entity authorized by
++      the copyright owner that is granting the License.
++
++      "Legal Entity" shall mean the union of the acting entity and all
++      other entities that control, are controlled by, or are under common
++      control with that entity. For the purposes of this definition,
++      "control" means (i) the power, direct or indirect, to cause the
++      direction or management of such entity, whether by contract or
++      otherwise, or (ii) ownership of fifty percent (50%) or more of the
++      outstanding shares, or (iii) beneficial ownership of such entity.
++
++      "You" (or "Your") shall mean an individual or Legal Entity
++      exercising permissions granted by this License.
++
++      "Source" form shall mean the preferred form for making modifications,
++      including but not limited to software source code, documentation
++      source, and configuration files.
++
++      "Object" form shall mean any form resulting from mechanical
++      transformation or translation of a Source form, including but
++      not limited to compiled object code, generated documentation,
++      and conversions to other media types.
++
++      "Work" shall mean the work of authorship, whether in Source or
++      Object form, made available under the License, as indicated by a
++      copyright notice that is included in or attached to the work
++      (an example is provided in the Appendix below).
++
++      "Derivative Works" shall mean any work, whether in Source or Object
++      form, that is based on (or derived from) the Work and for which the
++      editorial revisions, annotations, elaborations, or other modifications
++      represent, as a whole, an original work of authorship. For the purposes
++      of this License, Derivative Works shall not include works that remain
++      separable from, or merely link (or bind by name) to the interfaces of,
++      the Work and Derivative Works thereof.
++
++      "Contribution" shall mean any work of authorship, including
++      the original version of the Work and any modifications or additions
++      to that Work or Derivative Works thereof, that is intentionally
++      submitted to Licensor for inclusion in the Work by the copyright owner
++      or by an individual or Legal Entity authorized to submit on behalf of
++      the copyright owner. For the purposes of this definition, "submitted"
++      means any form of electronic, verbal, or written communication sent
++      to the Licensor or its representatives, including but not limited to
++      communication on electronic mailing lists, source code control systems,
++      and issue tracking systems that are managed by, or on behalf of, the
++      Licensor for the purpose of discussing and improving the Work, but
++      excluding communication that is conspicuously marked or otherwise
++      designated in writing by the copyright owner as "Not a Contribution."
++
++      "Contributor" shall mean Licensor and any individual or Legal Entity
++      on behalf of whom a Contribution has been received by Licensor and
++      subsequently incorporated within the Work.
++
++   2. Grant of Copyright License. Subject to the terms and conditions of
++      this License, each Contributor hereby grants to You a perpetual,
++      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
++      copyright license to reproduce, prepare Derivative Works of,
++      publicly display, publicly perform, sublicense, and distribute the
++      Work and such Derivative Works in Source or Object form.
++
++   3. Grant of Patent License. Subject to the terms and conditions of
++      this License, each Contributor hereby grants to You a perpetual,
++      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
++      (except as stated in this section) patent license to make, have made,
++      use, offer to sell, sell, import, and otherwise transfer the Work,
++      where such license applies only to those patent claims licensable
++      by such Contributor that are necessarily infringed by their
++      Contribution(s) alone or by combination of their Contribution(s)
++      with the Work to which such Contribution(s) was submitted. If You
++      institute patent litigation against any entity (including a
++      cross-claim or counterclaim in a lawsuit) alleging that the Work
++      or a Contribution incorporated within the Work constitutes direct
++      or contributory patent infringement, then any patent licenses
++      granted to You under this License for that Work shall terminate
++      as of the date such litigation is filed.
++
++   4. Redistribution. You may reproduce and distribute copies of the
++      Work or Derivative Works thereof in any medium, with or without
++      modifications, and in Source or Object form, provided that You
++      meet the following conditions:
++
++      (a) You must give any other recipients of the Work or
++          Derivative Works a copy of this License; and
++
++      (b) You must cause any modified files to carry prominent notices
++          stating that You changed the files; and
++
++      (c) You must retain, in the Source form of any Derivative Works
++          that You distribute, all copyright, patent, trademark, and
++          attribution notices from the Source form of the Work,
++          excluding those notices that do not pertain to any part of
++          the Derivative Works; and
++
++      (d) If the Work includes a "NOTICE" text file as part of its
++          distribution, then any Derivative Works that You distribute must
++          include a readable copy of the attribution notices contained
++          within such NOTICE file, excluding those notices that do not
++          pertain to any part of the Derivative Works, in at least one
++          of the following places: within a NOTICE text file distributed
++          as part of the Derivative Works; within the Source form or
++          documentation, if provided along with the Derivative Works; or,
++          within a display generated by the Derivative Works, if and
++          wherever such third-party notices normally appear. The contents
++          of the NOTICE file are for informational purposes only and
++          do not modify the License. You may add Your own attribution
++          notices within Derivative Works that You distribute, alongside
++          or as an addendum to the NOTICE text from the Work, provided
++          that such additional attribution notices cannot be construed
++          as modifying the License.
++
++      You may add Your own copyright statement to Your modifications and
++      may provide additional or different license terms and conditions
++      for use, reproduction, or distribution of Your modifications, or
++      for any such Derivative Works as a whole, provided Your use,
++      reproduction, and distribution of the Work otherwise complies with
++      the conditions stated in this License.
++
++   5. Submission of Contributions. Unless You explicitly state otherwise,
++      any Contribution intentionally submitted for inclusion in the Work
++      by You to the Licensor shall be under the terms and conditions of
++      this License, without any additional terms or conditions.
++      Notwithstanding the above, nothing herein shall supersede or modify
++      the terms of any separate license agreement you may have executed
++      with Licensor regarding such Contributions.
++
++   6. Trademarks. This License does not grant permission to use the trade
++      names, trademarks, service marks, or product names of the Licensor,
++      except as required for reasonable and customary use in describing the
++      origin of the Work and reproducing the content of the NOTICE file.
++
++   7. Disclaimer of Warranty. Unless required by applicable law or
++      agreed to in writing, Licensor provides the Work (and each
++      Contributor provides its Contributions) on an "AS IS" BASIS,
++      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
++      implied, including, without limitation, any warranties or conditions
++      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
++      PARTICULAR PURPOSE. You are solely responsible for determining the
++      appropriateness of using or redistributing the Work and assume any
++      risks associated with Your exercise of permissions under this License.
++
++   8. Limitation of Liability. In no event and under no legal theory,
++      whether in tort (including negligence), contract, or otherwise,
++      unless required by applicable law (such as deliberate and grossly
++      negligent acts) or agreed to in writing, shall any Contributor be
++      liable to You for damages, including any direct, indirect, special,
++      incidental, or consequential damages of any character arising as a
++      result of this License or out of the use or inability to use the
++      Work (including but not limited to damages for loss of goodwill,
++      work stoppage, computer failure or malfunction, or any and all
++      other commercial damages or losses), even if such Contributor
++      has been advised of the possibility of such damages.
++
++   9. Accepting Warranty or Additional Liability. While redistributing
++      the Work or Derivative Works thereof, You may choose to offer,
++      and charge a fee for, acceptance of support, warranty, indemnity,
++      or other liability obligations and/or rights consistent with this
++      License. However, in accepting such obligations, You may act only
++      on Your own behalf and on Your sole responsibility, not on behalf
++      of any other Contributor, and only if You agree to indemnify,
++      defend, and hold each Contributor harmless for any liability
++      incurred by, or claims asserted against, such Contributor by reason
++      of your accepting any such warranty or additional liability.
++
++   END OF TERMS AND CONDITIONS
++
++   APPENDIX: How to apply the Apache License to your work.
++
++      To apply the Apache License to your work, attach the following
++      boilerplate notice, with the fields enclosed by brackets "[]"
++      replaced with your own identifying information. (Don't include
++      the brackets!)  The text should be enclosed in the appropriate
++      comment syntax for the file format. We also recommend that a
++      file or class name and description of purpose be included on the
++      same "printed page" as the copyright notice for easier
++      identification within third-party archives.
++
++   Copyright [yyyy] [name of copyright owner]
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at
++
++       http://www.apache.org/licenses/LICENSE-2.0
++
++   Unless required by applicable law or agreed to in writing, software
++   distributed under the License is distributed on an "AS IS" BASIS,
++   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++   See the License for the specific language governing permissions and
++   limitations under the License.
+diff --git a/packages/cli/NOTICE b/packages/cli/NOTICE
+new file mode 100644
+index 0000000..b87bcc6
+--- /dev/null
++++ b/packages/cli/NOTICE
+@@ -0,0 +1,13 @@
++Live.link CLI and public distribution
++Copyright 2026 Melade, Inc.
++
++The owned work licensed under Apache-2.0 consists of packages/cli/ and
++exactly packages/agent-kit/src/index.js in the source monorepo, and the
++intentionally generated public CLI, skill, wrappers, installer, README and
++workflow in the public distribution.
++
++Other monorepo code, including the private platform and release-engineering
++source, is outside this grant. The individually licensed shared file does not
++license its sibling package. This notice identifies the licensed work; it does
++not modify the Apache License 2.0 terms in LICENSE. Bundled third-party
++software and its licenses are listed in THIRD_PARTY_NOTICES.
+diff --git a/packages/cli/THIRD_PARTY_NOTICES b/packages/cli/THIRD_PARTY_NOTICES
+new file mode 100644
+index 0000000..9071faf
+--- /dev/null
++++ b/packages/cli/THIRD_PARTY_NOTICES
+@@ -0,0 +1,216 @@
++Bundled third-party software
++
++The public live-link bundle inlines the packages below. Each remains under its own license, reproduced here unchanged.
++
++@modelcontextprotocol/sdk 1.30.0
++https://modelcontextprotocol.io
++License: MIT
++
++MIT License
++
++Copyright (c) 2024 Anthropic, PBC
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE.
++
++ajv 8.20.0
++https://ajv.js.org
++License: MIT
++
++The MIT License (MIT)
++
++Copyright (c) 2015-2021 Evgeny Poberezkin
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE.
++
++
++ajv-formats 3.0.1
++https://github.com/ajv-validator/ajv-formats
++License: MIT
++
++MIT License
++
++Copyright (c) 2020 Evgeny Poberezkin
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE.
++
++fast-deep-equal 3.1.3
++https://github.com/epoberezkin/fast-deep-equal
++License: MIT
++
++MIT License
++
++Copyright (c) 2017 Evgeny Poberezkin
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE.
++
++fast-uri 3.1.8
++https://github.com/fastify/fast-uri
++License: BSD-3-Clause
++
++Copyright (c) 2011-2021, Gary Court until https://github.com/garycourt/uri-js/commit/a1acf730b4bba3f1097c9f52e7d9d3aba8cdcaae
++Copyright (c) 2021-present The Fastify team <https://github.com/fastify/fastify#team>
++All rights reserved.
++
++Redistribution and use in source and binary forms, with or without
++modification, are permitted provided that the following conditions are met:
++    * Redistributions of source code must retain the above copyright
++      notice, this list of conditions and the following disclaimer.
++    * Redistributions in binary form must reproduce the above copyright
++      notice, this list of conditions and the following disclaimer in the
++      documentation and/or other materials provided with the distribution.
++    * The names of any contributors may not be used to endorse or promote
++      products derived from this software without specific prior written
++      permission.
++
++THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
++ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
++WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
++DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS AND CONTRIBUTORS BE LIABLE FOR ANY
++DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
++(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
++LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
++ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
++SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++                                  *   *   *
++
++The complete list of contributors can be found at:
++- https://github.com/garycourt/uri-js/graphs/contributors
++
++json-schema-traverse 1.0.0
++https://github.com/epoberezkin/json-schema-traverse
++License: MIT
++
++MIT License
++
++Copyright (c) 2017 Evgeny Poberezkin
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE.
++
++zod 3.25.76
++https://zod.dev
++License: MIT
++
++MIT License
++
++Copyright (c) 2025 Colin McDonnell
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE.
++
++zod-to-json-schema 3.25.2
++https://github.com/StefanTerdell/zod-to-json-schema
++License: ISC
++
++ISC License
++
++Copyright (c) 2020, Stefan Terdell
++
++Permission to use, copy, modify, and/or distribute this software for any
++purpose with or without fee is hereby granted, provided that the above
++copyright notice and this permission notice appear in all copies.
++
++THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++
+diff --git a/packages/cli/bin/live-link.mjs b/packages/cli/bin/live-link.mjs
+index 244e428..61854bc 100755
+--- a/packages/cli/bin/live-link.mjs
++++ b/packages/cli/bin/live-link.mjs
+@@ -1,7 +1,20 @@
+ #!/usr/bin/env node
+-import { run } from '../src/index.mjs';
+-run(process.argv.slice(2)).then(code => { process.exitCode = code; }).catch(() => {
+-  // Never print raw errors, stack traces, environment values or server bodies.
+-  process.stderr.write('Live.link could not finish. Run --help and check local file permissions.\n');
++// No static import of src/ here: node-version.mjs has no imports of its own, so any
++// ESM-capable Node can load it and an older runtime reaches the version check.
++import('../src/node-version.mjs').then(async ({ nodeSupported, unsupportedNodeMessage }) => {
++  if (!nodeSupported(process.versions.node)) {
++    process.stderr.write(unsupportedNodeMessage(process.versions.node));
++    process.exitCode = 1;
++    return;
++  }
++  const { run } = await import('../src/index.mjs');
++  try { process.exitCode = await run(process.argv.slice(2)); }
++  catch {
++    // Never print raw errors, stack traces, environment values or server bodies.
++    process.stderr.write('Live.link could not finish. Run --help and check local file permissions.\n');
++    process.exitCode = 1;
++  }
++}).catch(() => {
++  process.stderr.write('Live.link could not start. Reinstall the CLI and check that Node 22.12 or newer is active.\n');
+   process.exitCode = 1;
+ });
+diff --git a/packages/cli/package.json b/packages/cli/package.json
+index 3ed622e..ebf53cd 100644
+--- a/packages/cli/package.json
++++ b/packages/cli/package.json
+@@ -10,10 +10,13 @@
+   "files": [
+     "bin",
+     "src",
+-    "README.md"
++    "README.md",
++    "LICENSE",
++    "NOTICE",
++    "THIRD_PARTY_NOTICES"
+   ],
+   "engines": {
+-    "node": ">=22"
++    "node": ">=22.12.0"
+   },
+   "dependencies": {
+     "@live-link/agent-kit": "workspace:*",
+@@ -22,5 +25,6 @@
+   },
+   "scripts": {
+     "test": "node --test test/*.node.mjs"
+-  }
++  },
++  "license": "Apache-2.0"
+ }
+diff --git a/packages/cli/src/index.mjs b/packages/cli/src/index.mjs
+index a81b546..10e94bd 100644
+--- a/packages/cli/src/index.mjs
++++ b/packages/cli/src/index.mjs
+@@ -5,7 +5,7 @@ import { go } from './go.mjs';
+ import { apiBase } from './http.mjs';
+ import { CliError, fail } from './safety.mjs';
+ 
+-export const help = `Live.link CLI ${registry.version} (reviewed source; public distribution unpublished)
++export const help = `Live.link CLI ${registry.version} (reviewed source; public distribution ${registry.distribution.status})
+ 
+   live-link --help
+   live-link doctor
+diff --git a/packages/cli/src/init.mjs b/packages/cli/src/init.mjs
+index 7bf96bb..ce227e4 100644
+--- a/packages/cli/src/init.mjs
++++ b/packages/cli/src/init.mjs
+@@ -3,6 +3,8 @@ import { access, lstat, mkdir, open } from 'node:fs/promises';
+ import path from 'node:path';
+ import { agentDocument, registry, renderGuide } from '@live-link/agent-kit';
+ import { fail, safeDirectory } from './safety.mjs';
++import { cliVersion } from './version.mjs';
++import { nodeSupported } from './node-version.mjs';
+ 
+ export async function init(directory) {
+   const root = await safeDirectory(directory), local = path.join(root, '.live-link');
+@@ -44,5 +46,5 @@ export async function doctor({ env = process.env, base = registry.api, fetchImpl
+     const json = result.ok ? await result.json() : null;
+     if (json?.name === registry.name && Array.isArray(json.capabilities)) discovery = 'reachable';
+   } catch { /* A failed read-only diagnostic is reported, not hidden. */ }
+-  return { nodeSupported: Number(process.versions.node.split('.')[0]) >= 22, credentialConfigured: Boolean(env.LIVE_LINK_TOKEN), discovery, hosts, distribution: registry.distribution.status, hostedMcp: 'unavailable', agentOAuth: 'unavailable', note: 'Executable discovery does not grant permission or verify a host integration. Doctor sends no credential and makes no account changes.' };
++  return { cliVersion, nodeSupported: nodeSupported(process.versions.node), credentialSource: env.LIVE_LINK_TOKEN ? 'environment' : 'none', credentialConfigured: Boolean(env.LIVE_LINK_TOKEN), discovery, hosts, distribution: registry.distribution, hostedMcp: 'unavailable', agentOAuth: 'unavailable', note: 'Executable discovery does not grant permission or verify a host integration. Doctor sends no credential and makes no account changes.' };
+ }
+diff --git a/packages/cli/src/node-version.mjs b/packages/cli/src/node-version.mjs
+new file mode 100644
+index 0000000..98e13b2
+--- /dev/null
++++ b/packages/cli/src/node-version.mjs
+@@ -0,0 +1,22 @@
++// Dependency-free on purpose: bin/live-link.mjs loads this module before anything
++// else, so an unsupported runtime still receives a clear message instead of a link error.
++export const minimumNode = '22.12.0';
++export const guideUrl = 'https://live.link/start';
++
++export function parseVersion(value) {
++  const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(value ?? '').trim());
++  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
++}
++
++export function nodeSupported(actual, minimum = minimumNode) {
++  const found = parseVersion(actual), required = parseVersion(minimum);
++  if (!found || !required) return false;
++  for (let index = 0; index < 3; index++) if (found[index] !== required[index]) return found[index] > required[index];
++  return true;
++}
++
++export function unsupportedNodeMessage(actual) {
++  return `Live.link CLI needs Node ${minimumNode} or newer; this runtime is Node ${String(actual)}.\n` +
++    'Install a current Node from https://nodejs.org (or use nvm/fnm/volta), then repeat the command.\n' +
++    `Without a newer Node, publish over the HTTP API instead: ${guideUrl}\n`;
++}
+diff --git a/packages/cli/src/version.mjs b/packages/cli/src/version.mjs
+new file mode 100644
+index 0000000..2e98e0b
+--- /dev/null
++++ b/packages/cli/src/version.mjs
+@@ -0,0 +1,6 @@
++// Kept as a plain constant so the release bundle inlines only the version, never the
++// whole package.json (which lists a workspace dependency). Tests and the release build
++// fail when this value drifts from packages/cli/package.json.
++export const cliVersion = '0.1.0';
++/** Sent on every management API request; the agent request boundary requires it. */
++export const clientHeader = `live-link-cli/${cliVersion}`;
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index ed2ba72..29fb6fc 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -14,6 +14,9 @@ importers:
+       '@types/node':
+         specifier: ^24.10.0
+         version: 24.13.3
++      esbuild:
++        specifier: 0.28.2
++        version: 0.28.2
+       eslint:
+         specifier: ^9.39.1
+         version: 9.39.5(jiti@2.7.0)
+@@ -6182,7 +6185,6 @@ snapshots:
+       '@esbuild/win32-arm64': 0.28.2
+       '@esbuild/win32-ia32': 0.28.2
+       '@esbuild/win32-x64': 0.28.2
+-    optional: true
+ 
+   escape-html@1.0.3: {}
+ 
+diff --git a/scripts/release/build-cli.mjs b/scripts/release/build-cli.mjs
+new file mode 100644
+index 0000000..8e093fb
+--- /dev/null
++++ b/scripts/release/build-cli.mjs
+@@ -0,0 +1,138 @@
++#!/usr/bin/env node
++// Bundles packages/cli into one dependency-free ESM file for the public `live-link` package.
++import { build } from 'esbuild';
++import { chmod, copyFile, lstat, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
++import { realpathSync } from 'node:fs';
++import os from 'node:os';
++import path from 'node:path';
++import { fileURLToPath } from 'node:url';
++import { readReleaseLicenseFiles, releaseLicense, releaseLicenseNames, reviewedThirdParty, sha256 } from './release-licenses.mjs';
++import { cliVersion } from '../../packages/cli/src/version.mjs';
++
++export const repositoryRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
++export const packageName = 'live-link';
++export const distributionRepository = 'https://github.com/Melade-Inc/live-link-skill';
++export const minimumNode = '>=22.12.0';
++const esbuildTarget = 'node22';
++
++export function isMain(meta) {
++  try { return !!process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(meta.url); } catch { return false; }
++}
++export async function readCliPackage() {
++  const pkg = JSON.parse(await readFile(path.join(repositoryRoot, 'packages/cli/package.json'), 'utf8'));
++  if (!/^\d+\.\d+\.\d+$/.test(pkg.version)) throw new Error(`packages/cli/package.json version must be an exact x.y.z pin, found ${pkg.version}`);
++  if (pkg.engines?.node !== minimumNode) throw new Error(`packages/cli/package.json engines.node must be ${minimumNode}`);
++  if (pkg.version !== cliVersion) throw new Error(`packages/cli/src/version.mjs says ${cliVersion} but packages/cli/package.json says ${pkg.version}; keep them equal`);
++  if (pkg.private !== true || pkg.license !== releaseLicense) throw new Error('Source CLI must remain private with Apache-2.0 metadata');
++  return pkg;
++}
++// Additions require an explicit source-license review; directory prefixes alone
++// would silently admit newly imported private helpers or additional packages.
++export const licensedOwnedInputs = Object.freeze([
++  'packages/cli/bin/live-link.mjs',
++  'packages/cli/src/connect.mjs',
++  'packages/cli/src/files.mjs',
++  'packages/cli/src/go.mjs',
++  'packages/cli/src/http.mjs',
++  'packages/cli/src/index.mjs',
++  'packages/cli/src/init.mjs',
++  'packages/cli/src/node-version.mjs',
++  'packages/cli/src/publish.mjs',
++  'packages/cli/src/safety.mjs',
++  'packages/cli/src/state.mjs',
++  'packages/cli/src/terminal-mcp.mjs',
++  'packages/cli/src/version.mjs',
++  'packages/agent-kit/src/index.js',
++]);
++const pnpmKey = entry => `${entry.name.replace('/', '+')}@${entry.version}`;
++
++/** Every bundle input is either licensed owned source or a file of one reviewed third-party package. */
++export async function checkBundleInputs(metafile, { sourceRoot = repositoryRoot } = {}) {
++  const root = await realpath(sourceRoot);
++  const owned = new Set(licensedOwnedInputs);
++  const inputs = Object.keys(metafile.inputs ?? {});
++  if (!inputs.length) throw new Error('Release bundle has no auditable inputs');
++  const used = new Map();
++  for (const input of inputs) {
++    if (path.isAbsolute(input) || input.includes('\\') || path.posix.normalize(input) !== input || input.startsWith('../')) throw new Error(`Unreviewed bundle input: ${input}`);
++    // Decide by name first, before any filesystem access, so an unknown package is
++    // rejected as unreviewed whether or not something exists at that path.
++    let entry = null, directory = null;
++    if (!owned.has(input)) {
++      const match = /^node_modules\/\.pnpm\/([^/]+)\/node_modules\/((?:@[^/]+\/)?[^/]+)\/(.+)$/.exec(input);
++      entry = match ? reviewedThirdParty.find(candidate => candidate.name === match[2] && (match[1] === pnpmKey(candidate) || match[1].startsWith(`${pnpmKey(candidate)}_`))) ?? null : null;
++      if (!entry || !/\.(?:m|c)?js$|\.json$/.test(match[3]) || match[3].split('/').includes('node_modules')) throw new Error(`Unreviewed bundle input: ${input}`);
++      directory = `node_modules/.pnpm/${match[1]}/node_modules/${entry.name}`;
++    }
++    const file = path.join(root, input);
++    if (await realpath(file) !== file) throw new Error(`Out-of-tree or linked bundle input: ${input}`);
++    const info = await lstat(file);
++    if (!info.isFile() || (owned.has(input) && info.nlink !== 1)) throw new Error(`Unsafe bundle input: ${input}`);
++    if (!entry) continue;
++    const record = used.get(entry.name) ?? { entry, directory, inputs: [] };
++    if (record.directory !== directory) throw new Error(`Unreviewed bundle input: ${input}`);
++    record.inputs.push(input); used.set(entry.name, record);
++  }
++  for (const { entry, directory } of used.values()) {
++    const packageRoot = path.join(root, directory);
++    for (const name of ['package.json', 'LICENSE']) if (await realpath(path.join(packageRoot, name)) !== path.join(packageRoot, name)) throw new Error(`Linked ${entry.name} metadata is not reviewed`);
++    const pkg = JSON.parse(await readFile(path.join(packageRoot, 'package.json'), 'utf8'));
++    const license = await readFile(path.join(packageRoot, 'LICENSE'));
++    if (pkg.name !== entry.name || pkg.version !== entry.version || pkg.license !== entry.license || sha256(license) !== entry.licenseSha256) throw new Error(`Bundled ${entry.name} version or license is not reviewed`);
++  }
++  return {
++    owned: inputs.filter(input => owned.has(input)).sort(),
++    thirdParty: [...used.values()].map(({ entry, inputs: files }) => ({ ...entry, inputs: files.sort() })).sort((a, b) => a.name.localeCompare(b.name)),
++  };
++}
++
++/** Refuses a bundle that would leak this machine's paths, keep workspace links or link node:sqlite eagerly. */
++export function checkBundle(bundle, metafile) {
++  const problems = [];
++  if (!bundle.startsWith('#!/usr/bin/env node\n')) problems.push('the bundle lost its #!/usr/bin/env node line');
++  // The pnpm protocol appears only as a quoted version spec such as "workspace:*"; object keys named workspace are fine.
++  if (/["']workspace:/.test(bundle)) problems.push('the bundle still references a workspace: dependency');
++  // A leaked machine path always continues with a separator; a bare short home like /root also occurs inside ordinary identifiers.
++  for (const secret of [repositoryRoot, os.homedir()]) if (bundle.includes(`${secret}/`) || bundle.includes(`${secret}"`) || bundle.includes(`${secret}'`)) problems.push(`the bundle contains the local path ${secret}`);
++  for (const match of bundle.matchAll(/^import\s[^\n]*?from\s*["']([^"']+)["'];?$/gm)) if (!match[1].startsWith('node:')) problems.push(`unexpected runtime import ${match[1]}`);
++  if (/^import\s[^\n]*["']node:sqlite["']/m.test(bundle)) problems.push('node:sqlite is imported statically; the Node version gate could not run on older runtimes');
++  for (const output of Object.values(metafile.outputs)) for (const entry of output.imports) if (!entry.external || !entry.path.startsWith('node:')) problems.push(`bundled output still imports ${entry.path}`);
++  if (problems.length) throw new Error(`Release bundle rejected: ${problems.join('; ')}`);
++}
++
++export async function buildCli({ outDir = path.join(repositoryRoot, 'dist/cli') } = {}) {
++  const pkg = await readCliPackage();
++  const licenses = await readReleaseLicenseFiles();
++  await rm(outDir, { recursive: true, force: true }); await mkdir(outDir, { recursive: true });
++  const outfile = path.join(outDir, 'live-link.mjs');
++  const result = await build({
++    absWorkingDir: repositoryRoot, entryPoints: [path.join(repositoryRoot, 'packages/cli/bin/live-link.mjs')], outfile,
++    bundle: true, platform: 'node', format: 'esm', target: esbuildTarget, external: ['node:*'],
++    write: false, legalComments: 'none', logLevel: 'silent', metafile: true, treeShaking: true,
++  });
++  const bundleInputs = await checkBundleInputs(result.metafile);
++  const bundle = result.outputFiles[0].text;
++  checkBundle(bundle, result.metafile);
++  await writeFile(outfile, bundle);
++  await chmod(outfile, 0o755);
++  for (const [name, body] of Object.entries(licenses)) await writeFile(path.join(outDir, name), body);
++  const manifest = {
++    name: packageName, version: pkg.version,
++    description: 'Publish a built folder or document to one stable Live.link address from any terminal agent: private draft by default, explicit guarded publishing, same link on every revision.',
++    type: 'module', bin: { 'live-link': './live-link.mjs' }, files: ['live-link.mjs', 'README.md', ...releaseLicenseNames],
++    engines: { node: minimumNode }, license: releaseLicense, homepage: 'https://live.link/start',
++    repository: { type: 'git', url: `git+${distributionRepository}.git` }, bugs: { url: `${distributionRepository}/issues` },
++    keywords: ['live.link', 'publish', 'deploy', 'static site', 'agent', 'skill', 'mcp'],
++    publishConfig: { access: 'public', provenance: true },
++  };
++  await writeFile(path.join(outDir, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
++  await copyFile(path.join(repositoryRoot, 'packages/cli/README.md'), path.join(outDir, 'README.md'));
++  for (const file of manifest.files.concat('package.json')) await chmod(path.join(outDir, file), file === 'live-link.mjs' ? 0o755 : 0o644);
++  return { outDir, version: pkg.version, bytes: Buffer.byteLength(bundle), licensePlaceholder: false, bundleInputs, files: manifest.files.concat('package.json') };
++}
++
++if (isMain(import.meta)) {
++  const outIndex = process.argv.indexOf('--out');
++  const built = await buildCli(outIndex === -1 ? {} : { outDir: path.resolve(process.argv[outIndex + 1] ?? '') });
++  process.stdout.write(`${JSON.stringify(built, null, 2)}\n`);
++}
+diff --git a/scripts/release/build-distribution.mjs b/scripts/release/build-distribution.mjs
+new file mode 100644
+index 0000000..c88d7a7
+--- /dev/null
++++ b/scripts/release/build-distribution.mjs
+@@ -0,0 +1,134 @@
++#!/usr/bin/env node
++// Assembles the public Melade-Inc/live-link-skill repository tree from the reviewed source.
++import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
++import path from 'node:path';
++import { readReleaseLicenseFiles, sha256 } from './release-licenses.mjs';
++import { renderGuide } from '../../packages/agent-kit/src/index.js';
++import { buildCli, distributionRepository, isMain, packageName, readCliPackage, repositoryRoot } from './build-cli.mjs';
++
++const wrapper = (pin, command) => `#!/usr/bin/env sh
++# Runs the pinned Live.link CLI without a global install. Requires Node 22.12 or newer.
++set -eu
++exec npx -y ${packageName}@${pin} ${command} "$@"
++`;
++
++const installScript = pin => `#!/usr/bin/env sh
++# Installs the pinned Live.link CLI globally and runs its diagnostics.
++# Requires Node 22.12 or newer; without one, publish over the HTTP API: https://live.link/start
++set -eu
++PIN="${pin}"
++if ! command -v node >/dev/null 2>&1; then
++  echo "Node 22.12 or newer is required: https://nodejs.org" >&2
++  exit 1
++fi
++VERSION="$(node -p 'process.versions.node')"
++MAJOR="\${VERSION%%.*}"
++REST="\${VERSION#*.}"
++MINOR="\${REST%%.*}"
++if [ "$MAJOR" -lt 22 ] || { [ "$MAJOR" -eq 22 ] && [ "$MINOR" -lt 12 ]; }; then
++  echo "Node $VERSION found; Live.link needs 22.12 or newer. Without a newer Node, publish over the HTTP API: https://live.link/start" >&2
++  exit 1
++fi
++npm install -g "${packageName}@$PIN"
++live-link doctor
++`;
++
++const publishWorkflow = checks => `name: Publish live-link to npm
++on:
++  push:
++    tags: ['v*']
++permissions:
++  contents: read
++  id-token: write
++jobs:
++  publish:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 24.20.0
++          registry-url: https://registry.npmjs.org
++      - name: Check that the tag matches the pinned version
++        run: |
++          VERSION="$(cat VERSION)"
++          test "\${GITHUB_REF_NAME}" = "v\${VERSION}" || { echo "Tag \${GITHUB_REF_NAME} does not match VERSION \${VERSION}" >&2; exit 1; }
++          test "$(node -p 'require("./cli/package.json").version')" = "\${VERSION}" || { echo "cli/package.json does not match VERSION" >&2; exit 1; }
++      - name: Verify reviewed package and license bytes before execution
++        run: |
++          node --input-type=module <<'NODE'
++          import assert from 'node:assert/strict';
++          import { createHash } from 'node:crypto';
++          import { lstat, readFile, readdir } from 'node:fs/promises';
++          const checks = ${JSON.stringify(checks)};
++          assert.deepEqual((await readdir('cli')).sort(), Object.keys(checks).filter(p => p.startsWith('cli/')).map(p => p.slice(4)).sort());
++          for (const [file, expected] of Object.entries(checks)) {
++            const info = await lstat(file);
++            assert.ok(info.isFile() && !info.isSymbolicLink() && info.nlink === 1, file);
++            assert.equal(info.mode & 0o7777, expected.mode, file);
++            assert.equal(createHash('sha256').update(await readFile(file)).digest('hex'), expected.sha256, file);
++          }
++          const pkg = JSON.parse(await readFile('cli/package.json', 'utf8'));
++          assert.equal(pkg.license, 'Apache-2.0');
++          assert.equal(pkg.scripts, undefined);
++          assert.equal(pkg.dependencies, undefined);
++          NODE
++      - name: Smoke test the bundle
++        run: node cli/live-link.mjs --help >/dev/null
++      - name: Publish with provenance
++        working-directory: cli
++        run: npm publish --provenance --access public
++        env:
++          NODE_AUTH_TOKEN: \${{ secrets.NPM_TOKEN }}
++`;
++
++const readme = pin => `# Live.link skill and CLI
++
++Publish a built folder, an HTML file or a document to one stable live link. Private draft first; publish only after review. Guide for agents: https://live.link/start
++
++- Skill for coding agents: \`npx skills add Melade-Inc/live-link-skill --skill live-link\`
++- CLI (Node 22.12 or newer): \`npx -y ${packageName}@${pin} go ./dist\` saves a private draft; \`npx -y ${packageName}@${pin} go ./dist --yes --slug my-app --audience public\` publishes after approval, and later \`go ./dist --yes\` updates the same link
++- Local MCP for terminal agents: \`npx -y ${packageName}@${pin} connect ./dist\` prints a credential-free stdio server config
++- Global install: \`npm install -g ${packageName}@${pin}\` or \`sh install.sh\`
++
++Credentials stay in the host secret environment as LIVE_LINK_TOKEN (create one at https://app.live.link/settings). Never put a credential in chat, a project file or a command argument.
++
++Copyright 2026 Melade, Inc. Owned public distribution files are Apache-2.0 licensed; see LICENSE and NOTICE. Bundled third-party notices are in THIRD_PARTY_NOTICES. The private platform is outside this grant.
++
++This repository is generated from the reviewed Live.link source at release time; open issues here, but changes land upstream. Version: ${pin}.
++`;
++
++export async function buildDistribution({ outDir = path.join(repositoryRoot, 'dist/distribution') } = {}) {
++  const pin = (await readCliPackage()).version;
++  await rm(outDir, { recursive: true, force: true });
++  const skillDir = path.join(outDir, 'skills/live-link'), scriptsDir = path.join(skillDir, 'scripts');
++  await mkdir(scriptsDir, { recursive: true }); await mkdir(path.join(outDir, '.github/workflows'), { recursive: true });
++  const cli = await buildCli({ outDir: path.join(outDir, 'cli') });
++  const licenses = await readReleaseLicenseFiles();
++  const checks = {};
++  for (const file of cli.files) checks[`cli/${file}`] = { sha256: sha256(await readFile(path.join(outDir, 'cli', file))), mode: file === 'live-link.mjs' ? 0o755 : 0o644 };
++  for (const [file, body] of Object.entries(licenses)) checks[file] = { sha256: sha256(body), mode: 0o644 };
++  const files = {
++    ...licenses,
++    'skills/live-link/SKILL.md': renderGuide('skill'),
++    'skills/live-link/scripts/publish.sh': wrapper(pin, 'go'),
++    'skills/live-link/scripts/connect.sh': wrapper(pin, 'connect'),
++    'install.sh': installScript(pin),
++    'VERSION': `${pin}\n`,
++    '.github/workflows/publish.yml': publishWorkflow(checks),
++    'README.md': readme(pin),
++  };
++  for (const [name, content] of Object.entries(files)) {
++    await writeFile(path.join(outDir, name), content);
++    await chmod(path.join(outDir, name), name.endsWith('.sh') ? 0o755 : 0o644);
++  }
++  return { outDir, version: pin, repository: distributionRepository, licensePlaceholder: cli.licensePlaceholder, bundleBytes: cli.bytes, files: [...Object.keys(files), ...cli.files.map(file => `cli/${file}`)] };
++}
++
++export async function readVersionFile(outDir) { return (await readFile(path.join(outDir, 'VERSION'), 'utf8')).trim(); }
++
++if (isMain(import.meta)) {
++  const outIndex = process.argv.indexOf('--out');
++  const built = await buildDistribution(outIndex === -1 ? {} : { outDir: path.resolve(process.argv[outIndex + 1] ?? '') });
++  process.stdout.write(`${JSON.stringify(built, null, 2)}\n`);
++}
+diff --git a/scripts/release/published-package.mjs b/scripts/release/published-package.mjs
+new file mode 100644
+index 0000000..c211947
+--- /dev/null
++++ b/scripts/release/published-package.mjs
+@@ -0,0 +1,85 @@
++// Read-only inspection of the flat, dependency-free npm artifact. No extraction,
++// package hooks, subprocesses or uploaded code execute while verifying a release.
++import { createHash, timingSafeEqual } from 'node:crypto';
++import { gunzipSync } from 'node:zlib';
++
++export const compressedPackageLimit = 8 * 1024 * 1024;
++export const unpackedPackageLimit = 16 * 1024 * 1024;
++
++export async function fetchBounded(url, { fetchImpl = fetch, limit = 128 * 1024 } = {}) {
++  const response = await fetchImpl(url, { redirect: 'error', credentials: 'omit', signal: AbortSignal.timeout(30000) });
++  if (!response.ok) { await response.body?.cancel(); throw new Error('REMOTE_HTTP_ERROR'); }
++  const declared = response.headers.get('content-length');
++  if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > limit)) {
++    await response.body?.cancel();
++    throw new Error('REMOTE_BYTE_LIMIT');
++  }
++  if (!response.body) throw new Error('REMOTE_EMPTY_BODY');
++  const reader = response.body.getReader(), parts = [];
++  let bytes = 0;
++  try {
++    for (;;) {
++      const { done, value } = await reader.read();
++      if (done) break;
++      bytes += value.byteLength;
++      if (bytes > limit) throw new Error('REMOTE_BYTE_LIMIT');
++      parts.push(Buffer.from(value));
++    }
++  } finally { await reader.cancel(); }
++  return Buffer.concat(parts, bytes);
++}
++
++function octal(field) {
++  // Buffer's ascii decoder masks high bits; validate raw octal bytes first.
++  if (field.some(byte => byte !== 0 && byte !== 32 && (byte < 48 || byte > 55))) throw new Error('PACKAGE_INVALID_TAR');
++  const nul = field.indexOf(0);
++  if (nul !== -1 && field.subarray(nul).some(byte => byte !== 0 && byte !== 32)) throw new Error('PACKAGE_INVALID_TAR');
++  const value = field.toString('ascii').replace(/\0.*$/, '').trim();
++  if (!/^[0-7]+$/.test(value)) throw new Error('PACKAGE_INVALID_TAR');
++  const number = Number.parseInt(value, 8);
++  if (!Number.isSafeInteger(number)) throw new Error('PACKAGE_INVALID_TAR');
++  return number;
++}
++
++export function inspectPublishedPackage(compressed, integrity, expected) {
++  if (compressed.length > compressedPackageLimit) throw new Error('PACKAGE_BYTE_LIMIT');
++  if (!/^sha512-[A-Za-z0-9+/]{86}==$/.test(integrity ?? '')) throw new Error('PACKAGE_INVALID_INTEGRITY');
++  const recorded = Buffer.from(integrity.slice(7), 'base64'), actual = createHash('sha512').update(compressed).digest();
++  if (recorded.length !== actual.length || !timingSafeEqual(recorded, actual)) throw new Error('PACKAGE_INTEGRITY_MISMATCH');
++  let tar;
++  try { tar = gunzipSync(compressed, { maxOutputLength: unpackedPackageLimit }); }
++  catch { throw new Error('PACKAGE_INVALID_ARCHIVE'); }
++  if (tar.length % 512 !== 0) throw new Error('PACKAGE_INVALID_TAR');
++  const files = new Map();
++  let offset = 0, entries = 0, terminated = false;
++  while (offset + 512 <= tar.length) {
++    const header = tar.subarray(offset, offset + 512);
++    if (header.every(byte => byte === 0)) {
++      // Require the two standard zero records, and reject hidden trailing entries.
++      if (offset + 1024 > tar.length || !tar.subarray(offset).every(byte => byte === 0)) throw new Error('PACKAGE_INVALID_TAR');
++      terminated = true; break;
++    }
++    if (++entries > 32) throw new Error('PACKAGE_ENTRY_LIMIT');
++    const checksum = octal(header.subarray(148, 156));
++    const calculated = header.reduce((sum, byte, index) => sum + (index >= 148 && index < 156 ? 32 : byte), 0);
++    if (checksum !== calculated) throw new Error('PACKAGE_INVALID_TAR');
++    const name = header.subarray(0, 100).toString('utf8').replace(/\0.*$/, '');
++    // This artifact has only short flat regular files. Reject extension/link
++    // records rather than interpreting alternate paths or trusting an extractor.
++    const type = header[156];
++    if ((type !== 0 && type !== 48) || header.subarray(157, 257).some(byte => byte !== 0) || header.subarray(345, 500).some(byte => byte !== 0)) throw new Error('PACKAGE_UNSAFE_ENTRY');
++    if (!/^package\/[A-Za-z0-9_.-]+$/.test(name) || !expected.has(name.slice(8)) || files.has(name)) throw new Error('PACKAGE_FILE_MISMATCH');
++    const size = octal(header.subarray(124, 136));
++    offset += 512;
++    const end = offset + size;
++    if (size > unpackedPackageLimit || end > tar.length) throw new Error('PACKAGE_INVALID_TAR');
++    const body = tar.subarray(offset, end), wanted = expected.get(name.slice(8));
++    if (!body.equals(wanted)) throw new Error('PACKAGE_CONTENT_MISMATCH');
++    const mode = octal(header.subarray(100, 108));
++    if (mode !== (name === 'package/live-link.mjs' ? 0o755 : 0o644)) throw new Error('PACKAGE_MODE_MISMATCH');
++    files.set(name, { path: name, bytes: size, sha256: createHash('sha256').update(body).digest('hex') });
++    offset += Math.ceil(size / 512) * 512;
++  }
++  if (!terminated || files.size !== expected.size) throw new Error('PACKAGE_FILE_MISMATCH');
++  return { ok: true, integrity: 'sha512-verified', executed: false, files: [...files.values()].sort((a, b) => a.path.localeCompare(b.path)) };
++}
+diff --git a/scripts/release/release-licenses.mjs b/scripts/release/release-licenses.mjs
+new file mode 100644
+index 0000000..a4eb75a
+--- /dev/null
++++ b/scripts/release/release-licenses.mjs
+@@ -0,0 +1,54 @@
++// Release-engineering source; outside the scoped public Apache grant.
++import { createHash } from 'node:crypto';
++import { lstat, readFile, realpath } from 'node:fs/promises';
++import path from 'node:path';
++import { fileURLToPath } from 'node:url';
++
++const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
++export const releaseLicense = 'Apache-2.0';
++// Official bytes: https://www.apache.org/licenses/LICENSE-2.0.txt (September 7, 2026).
++// NOTICE and THIRD_PARTY_NOTICES are separately reviewed attribution, not edits to those terms.
++export const releaseLicenseHashes = Object.freeze({
++  LICENSE: 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30',
++  NOTICE: 'eb024453d493f14a86495e7bae1d0661d08a7e056e028868ba15c1efdd82df64',
++  THIRD_PARTY_NOTICES: 'bb5c52d685d8d8e8c2a53c52fb176aed7bd5de328b2ff6e792cdb85d60ecc604',
++});
++export const releaseLicenseNames = Object.freeze(Object.keys(releaseLicenseHashes));
++// Every package esbuild may inline into the public bundle, pinned by version, license and
++// license-file bytes. Adding one requires a license review, a recomposed THIRD_PARTY_NOTICES
++// and new hashes above; the bundle input audit rejects anything not listed here.
++export const reviewedThirdParty = Object.freeze([
++  { name: '@modelcontextprotocol/sdk', version: '1.30.0', license: 'MIT', homepage: 'https://modelcontextprotocol.io', licenseSha256: '5e13dbbc1d120fc2a03cecde7c91424ae2d7de11b63d58ded2f4431e261ee50d' },
++  { name: 'ajv', version: '8.20.0', license: 'MIT', homepage: 'https://ajv.js.org', licenseSha256: 'a05350a88e318e4f5f2c2a1ff1e2e88daa4dd38e6e78b71cccae422bdc762cc3' },
++  { name: 'ajv-formats', version: '3.0.1', license: 'MIT', homepage: 'https://github.com/ajv-validator/ajv-formats', licenseSha256: '9df3bb69929a3b650ed73b3bfa1756725aaff0ac296461605753547004eafeaf' },
++  { name: 'fast-deep-equal', version: '3.1.3', license: 'MIT', homepage: 'https://github.com/epoberezkin/fast-deep-equal', licenseSha256: '7bf9b2de73a6b356761c948d0e9eeb4be6c1270bd04c79cd489c1e400ffdfc1a' },
++  { name: 'fast-uri', version: '3.1.8', license: 'BSD-3-Clause', homepage: 'https://github.com/fastify/fast-uri', licenseSha256: 'b010b0dfdfdb23d7396e03b82cd4621fc9bb8f95d6b0aea70b9c24e12074c786' },
++  { name: 'json-schema-traverse', version: '1.0.0', license: 'MIT', homepage: 'https://github.com/epoberezkin/json-schema-traverse', licenseSha256: '7bf9b2de73a6b356761c948d0e9eeb4be6c1270bd04c79cd489c1e400ffdfc1a' },
++  { name: 'zod', version: '3.25.76', license: 'MIT', homepage: 'https://zod.dev', licenseSha256: '3f1189b28e3866e0d979968d466b78f813f76827cfdca1fbb124cc0a5c8841f8' },
++  { name: 'zod-to-json-schema', version: '3.25.2', license: 'ISC', homepage: 'https://github.com/StefanTerdell/zod-to-json-schema', licenseSha256: '80d3168ad2f70f6f5bb2ab22b23414707abf6f0a392034891481ae36a1a429d4' },
++]);
++export const sha256 = value => createHash('sha256').update(value).digest('hex');
++
++/** The exact THIRD_PARTY_NOTICES bytes for the reviewed list, given each package's LICENSE bytes. */
++export function composeThirdPartyNotices(licenses) {
++  const parts = [Buffer.from('Bundled third-party software\n\nThe public live-link bundle inlines the packages below. Each remains under its own license, reproduced here unchanged.\n\n')];
++  for (const entry of reviewedThirdParty) {
++    const license = licenses.get(entry.name);
++    if (!license) throw new Error(`Missing license bytes for ${entry.name}`);
++    parts.push(Buffer.from(`${entry.name} ${entry.version}\n${entry.homepage}\nLicense: ${entry.license}\n\n`), license, Buffer.from(license.at(-1) === 10 ? '\n' : '\n\n'));
++  }
++  return Buffer.concat(parts);
++}
++
++export async function readReleaseLicenseFiles({ sourceRoot = repositoryRoot } = {}) {
++  const root = await realpath(sourceRoot), files = {};
++  for (const name of releaseLicenseNames) {
++    const file = path.join(root, 'packages/cli', name);
++    const info = await lstat(file);
++    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || await realpath(file) !== file) throw new Error(`Unsafe release license file: ${name}`);
++    const body = await readFile(file);
++    if (sha256(body) !== releaseLicenseHashes[name]) throw new Error(`Release license bytes changed: ${name}`);
++    files[name] = body;
++  }
++  return files;
++}
+diff --git a/scripts/release/verify-distribution-tree.mjs b/scripts/release/verify-distribution-tree.mjs
+new file mode 100644
+index 0000000..cea49d2
+--- /dev/null
++++ b/scripts/release/verify-distribution-tree.mjs
+@@ -0,0 +1,173 @@
++// Offline preparation evidence only. This never establishes a published release.
++import { execFile } from 'node:child_process';
++import { createHash } from 'node:crypto';
++import { constants } from 'node:fs';
++import { chmod, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import { promisify } from 'node:util';
++import { buildDistribution } from './build-distribution.mjs';
++import { readCliPackage } from './build-cli.mjs';
++
++const run = promisify(execFile);
++const sha256 = value => createHash('sha256').update(value).digest('hex');
++const pinPattern = /^\d+\.\d+\.\d+$/;
++
++const treeByteLimit = 16 * 1024 * 1024;
++const sameIdentity = (a, b) => a.dev === b.dev && a.ino === b.ino;
++const sameFile = (a, b) => sameIdentity(a, b) && a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs && a.mode === b.mode;
++
++// Capture through one no-follow descriptor, bound actual reads (not just the
++// earlier stat), and reject replacement/growth before any bytes are accepted.
++export async function captureTreeFile(file, expected, remaining, { openFile = open, checkParents = async () => {} } = {}) {
++  const handle = await openFile(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
++  try {
++    const before = await handle.stat();
++    if (!before.isFile() || before.nlink !== 1 || !sameFile(before, expected)) throw new Error('TREE_CHANGED');
++    if (before.size > remaining) throw new Error('TREE_BYTE_LIMIT');
++    const mode = before.mode & 0o7777;
++    if (mode !== 0o644 && mode !== 0o755) throw new Error('TREE_UNSAFE_MODE');
++    await checkParents();
++    const chunks = []; let bytes = 0;
++    for (;;) {
++      const buffer = Buffer.alloc(Math.min(65536, remaining - bytes + 1));
++      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
++      if (!bytesRead) break;
++      bytes += bytesRead;
++      if (bytes > remaining) throw new Error('TREE_BYTE_LIMIT');
++      chunks.push(buffer.subarray(0, bytesRead));
++    }
++    if (!sameFile(before, await handle.stat()) || bytes !== before.size) throw new Error('TREE_CHANGED');
++    const current = await lstat(file);
++    if (!current.isFile() || !sameFile(before, current)) throw new Error('TREE_CHANGED');
++    await checkParents();
++    return { body: Buffer.concat(chunks, bytes), mode, executable: !!(mode & 0o111) };
++  } finally { await handle.close(); }
++}
++
++// The caller supplies a stable local generated tree. Walked directory identities
++// are rechecked around each capture; symlink/file replacement and growth fail
++// closed. Like the local build itself, this is not a sandbox against a privileged
++// process concurrently rewriting ancestor directories or build dependencies.
++async function snapshot(directory) {
++  const given = await lstat(directory);
++  if (!given.isDirectory() || given.isSymbolicLink()) throw new Error('TREE_NOT_DIRECTORY');
++  directory = await realpath(directory);
++  const root = await lstat(directory);
++  if (!sameIdentity(root, given)) throw new Error('TREE_CHANGED');
++  const files = new Map(), directories = new Map([[directory, root]]);
++  let entries = 0, bytes = 0;
++  const checkParents = async () => {
++    for (const [name, original] of directories) {
++      const current = await lstat(name);
++      if (!current.isDirectory() || current.isSymbolicLink() || !sameIdentity(current, original) || await realpath(name) !== name) throw new Error('TREE_CHANGED');
++    }
++  };
++  async function walk(relative = '') {
++    await checkParents();
++    const children = await readdir(path.join(directory, relative), { withFileTypes: true });
++    if (relative && children.length === 0) throw new Error('TREE_EMPTY_DIRECTORY');
++    for (const entry of children) {
++      if (++entries > 64) throw new Error('TREE_ENTRY_LIMIT');
++      const name = path.posix.join(relative, entry.name), file = path.join(directory, name);
++      const info = await lstat(file);
++      if (info.isSymbolicLink() || (!info.isFile() && !info.isDirectory())) throw new Error('TREE_UNSAFE_ENTRY');
++      if (info.isDirectory()) { directories.set(file, info); await walk(name); continue; }
++      const captured = await captureTreeFile(file, info, treeByteLimit - bytes, { checkParents });
++      bytes += captured.body.length;
++      files.set(name, captured);
++    }
++  }
++  await walk(); await checkParents();
++  return files;
++}
++
++function compare(actual, expected) {
++  const problems = [];
++  for (const name of [...new Set([...actual.keys(), ...expected.keys()])].sort()) {
++    if (!expected.has(name)) problems.push({ file: name, reason: 'unexpected-file' });
++    else if (!actual.has(name)) problems.push({ file: name, reason: 'missing-file' });
++    else if (!actual.get(name).body.equals(expected.get(name).body)) problems.push({ file: name, reason: 'content-mismatch' });
++    else if (actual.get(name).mode !== expected.get(name).mode) problems.push({ file: name, reason: 'executable-bit-mismatch' });
++  }
++  return problems;
++}
++
++async function packAndSmoke(files, temporary, pin) {
++  const packageDir = path.join(temporary, 'package-input'), packedDir = path.join(temporary, 'packed');
++  const extractedDir = path.join(temporary, 'extracted'), emptyDir = path.join(temporary, 'empty');
++  const homeDir = path.join(temporary, 'home'), stateDir = path.join(temporary, 'state');
++  for (const directory of [packageDir, packedDir, extractedDir, emptyDir, homeDir]) await mkdir(directory);
++  const expectedPackage = new Map();
++  // Execute the inspected bytes, not a second read of a possibly changing tree.
++  for (const [name, value] of files) if (name.startsWith('cli/')) {
++    const packageName = name.slice(4);
++    await writeFile(path.join(packageDir, packageName), value.body, { mode: value.mode });
++    await chmod(path.join(packageDir, packageName), value.mode);
++    expectedPackage.set(`package/${packageName}`, value);
++  }
++  const userConfig = path.join(temporary, 'npm-user.conf'), globalConfig = path.join(temporary, 'npm-global.conf');
++  await writeFile(userConfig, ''); await writeFile(globalConfig, '');
++  // No inherited credentials, NODE_OPTIONS, npm configuration, proxy, home or
++  // workspace links. Offline mode and ignored lifecycle scripts prohibit registry
++  // resolution and package hooks; the input has no dependencies or npm scripts.
++  const env = { PATH: process.env.PATH, HOME: homeDir, LIVE_LINK_STATE_DIR: stateDir, npm_config_userconfig: userConfig, npm_config_globalconfig: globalConfig, npm_config_cache: path.join(temporary, 'npm-cache'), npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false', npm_config_update_notifier: 'false' };
++  const options = { cwd: packageDir, env, timeout: 30000, maxBuffer: 1024 * 1024 };
++  const packed = await run('npm', ['pack', '--offline', '--ignore-scripts', '--json', '--pack-destination', packedDir], options);
++  const [metadata, ...extra] = JSON.parse(packed.stdout);
++  if (!metadata || extra.length || metadata.name !== 'live-link' || metadata.version !== pin || path.basename(metadata.filename) !== metadata.filename) throw new Error('PACK_IDENTITY_MISMATCH');
++  const packageFiles = metadata.files.map(file => `package/${file.path}`).sort();
++  if (JSON.stringify(packageFiles) !== JSON.stringify([...expectedPackage.keys()].sort())) throw new Error('PACK_FILE_MISMATCH');
++  const archive = path.join(packedDir, metadata.filename);
++  await run('tar', ['-xzpf', archive, '-C', extractedDir], options);
++  if (compare(await snapshot(extractedDir), expectedPackage).length) throw new Error('PACK_CONTENT_MISMATCH');
++  const bundle = path.join(extractedDir, 'package/live-link.mjs');
++  const smokeOptions = { ...options, cwd: emptyDir };
++  const help = await run(process.execPath, [bundle, '--help'], smokeOptions);
++  if (!help.stdout.includes('live-link go') || help.stderr) throw new Error('CLI_HELP_FAILED');
++  // A closed loopback port proves the offline/unconfigured doctor state without
++  // a dependency on npm, the public API, private credentials or provider access.
++  const doctor = await run(process.execPath, [bundle, 'doctor', '--api-base', 'http://127.0.0.1:1/api/v1', '--allow-localhost'], smokeOptions);
++  const diagnostics = JSON.parse(doctor.stdout);
++  if (doctor.stderr || diagnostics.cliVersion !== pin || diagnostics.nodeSupported !== true || diagnostics.credentialSource !== 'none' || diagnostics.discovery !== 'unavailable') throw new Error('CLI_DOCTOR_FAILED');
++  // Test npm's bin mapping as installed, still from the inspected local archive
++  // with scripts, dependencies and registry access disabled.
++  const installed = path.join(temporary, 'installed');
++  await run('npm', ['install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--prefix', installed, archive], smokeOptions);
++  const installedBin = path.join(installed, 'node_modules/.bin/live-link');
++  const installedHelp = await run(installedBin, ['--help'], smokeOptions);
++  if (!installedHelp.stdout.includes('live-link go') || installedHelp.stderr) throw new Error('CLI_INSTALLED_BIN_FAILED');
++  if (compare(await snapshot(path.join(installed, 'node_modules/live-link')), new Map([...expectedPackage].map(([name, value]) => [name.slice(8), value]))).length) throw new Error('PACK_INSTALLED_CONTENT_MISMATCH');
++  if ((await readdir(emptyDir)).length) throw new Error('CLI_CHANGED_WORKING_DIRECTORY');
++  return { ok: true, offline: true, lifecycleScripts: false, dependencyInstall: false, localPackageInstall: true, files: packageFiles, tarballSha256: sha256(await readFile(archive)), smoke: { help: 'passed', doctor: 'passed', installedBin: 'passed', credentials: 'none', discovery: 'unavailable', nodeVersion: process.versions.node } };
++}
++
++export async function verifyDistributionTree(outDir, { pin } = {}) {
++  const sourcePin = (await readCliPackage()).version;
++  pin ??= sourcePin;
++  if (!pinPattern.test(pin)) throw new Error('An exact x.y.z pin is required.');
++  const result = { mode: 'dry-run', pin, ok: false, releaseReady: false, checks: {}, release: { license: { status: 'not-checked' }, npm: { status: 'not-checked' }, tag: { status: 'not-checked' }, skill: { status: 'not-checked' }, limitations: ['Local build and pack evidence only; run the published verifier after an authorized release.', 'Apache-2.0 was selected; source review and publication approval remain separate requirements.', 'This dry run does not establish host, hosted API or public distribution acceptance.'] } };
++  if (pin !== sourcePin) { result.checks.pin = { ok: false, expected: sourcePin, found: pin }; return result; }
++  result.checks.pin = { ok: true, expected: sourcePin };
++  const temporary = await mkdtemp(path.join(os.tmpdir(), 'live-link-distribution-verify-'));
++  try {
++    const expectedDir = path.join(temporary, 'expected');
++    await buildDistribution({ outDir: expectedDir });
++    result.release.license = { status: 'selected', selected: 'Apache-2.0', releaseApproved: false };
++    let files;
++    try { files = await snapshot(path.resolve(outDir)); }
++    catch (error) { result.checks.tree = { ok: false, error: error.code === 'ENOENT' ? 'TREE_MISSING' : /^TREE_[A-Z_]+$/.test(error.message) ? error.message : 'TREE_UNREADABLE' }; return result; }
++    const problems = compare(files, await snapshot(expectedDir));
++    result.checks.tree = { ok: problems.length === 0, problems, files: [...files].sort(([a], [b]) => a.localeCompare(b)).map(([name, value]) => ({ path: name, sha256: sha256(value.body), bytes: value.body.length, mode: value.mode, executable: value.executable })) };
++    if (problems.length) return result;
++    try { result.checks.package = await packAndSmoke(files, temporary, pin); }
++    catch (error) {
++      const command = ['npm', 'tar'].includes(error.path) ? error.path : error.path === process.execPath ? 'node' : undefined;
++      result.checks.package = { ok: false, error: /^(PACK|CLI)_[A-Z_]+$/.test(error.message) ? error.message : error.code === 'ENOENT' ? 'REQUIRED_COMMAND_UNAVAILABLE' : error.killed ? 'COMMAND_TIMEOUT' : 'PACK_OR_SMOKE_FAILED', ...(command ? { command } : {}) };
++      return result;
++    }
++    result.release.license.status = 'selected-artifact-verified';
++    result.ok = true;
++    return result;
++  } finally { await rm(temporary, { recursive: true, force: true }); }
++}
+diff --git a/scripts/release/verify-distribution.mjs b/scripts/release/verify-distribution.mjs
+new file mode 100644
+index 0000000..ee7e91b
+--- /dev/null
++++ b/scripts/release/verify-distribution.mjs
+@@ -0,0 +1,92 @@
++#!/usr/bin/env node
++// Proves that a published pin exists on npm and in the public repository with the exact SKILL.md
++// this source renders. Published mode is network-dependent; --dry-run checks a
++// generated public tree offline and never establishes release acceptance.
++import { execFile } from 'node:child_process';
++import { createHash } from 'node:crypto';
++import { promisify } from 'node:util';
++import { mkdtemp, readFile, rm } from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import { renderGuide } from '../../packages/agent-kit/src/index.js';
++import { buildCli, distributionRepository, isMain, packageName, readCliPackage } from './build-cli.mjs';
++
++import { releaseLicense, releaseLicenseNames } from './release-licenses.mjs';
++import { compressedPackageLimit, fetchBounded, inspectPublishedPackage } from './published-package.mjs';
++
++const run = promisify(execFile);
++const sha256 = value => createHash('sha256').update(value).digest('hex');
++const pinPattern = /^\d+\.\d+\.\d+$/;
++
++export async function verifyDistribution(pin, { execFileImpl = run, fetchImpl = fetch } = {}) {
++  if (!pinPattern.test(pin ?? '')) throw new Error(`Provide an exact version pin such as 1.0.0, not ${JSON.stringify(pin)}`);
++  const sourcePin = (await readCliPackage()).version;
++  if (pin !== sourcePin) throw new Error('Verify a published release against its exact reviewed source version.');
++  const checks = {}, temporary = await mkdtemp(path.join(os.tmpdir(), 'live-link-published-verify-'));
++  try {
++    // Build reviewed expected bytes locally, but never execute downloaded code.
++    const built = await buildCli({ outDir: path.join(temporary, 'cli') });
++    const expectedFiles = new Map(await Promise.all(built.files.map(async name => [name, await readFile(path.join(built.outDir, name))])));
++    let metadata;
++    const tarball = `https://registry.npmjs.org/live-link/-/live-link-${pin}.tgz`;
++    try {
++      const body = await fetchBounded(`https://registry.npmjs.org/live-link/${pin}`, { fetchImpl });
++      metadata = JSON.parse(body.toString('utf8'));
++      checks.npm = { ok: metadata.name === packageName && metadata.version === pin && metadata.license === releaseLicense && metadata.dist?.tarball === tarball,
++        expected: pin, versionMatches: metadata.version === pin, licenseMatches: metadata.license === releaseLicense };
++    } catch { checks.npm = { ok: false, expected: pin, error: 'NPM_METADATA_UNAVAILABLE' }; }
++    try {
++      const { stdout } = await execFileImpl('git', ['ls-remote', '--tags', `${distributionRepository}.git`, `refs/tags/v${pin}`, `refs/tags/v${pin}^{}`], { timeout: 30000, maxBuffer: 16384 });
++      const refs = stdout.trim().split('\n').map(line => line.split(/\s+/));
++      // Prefer the peeled commit of an annotated tag; freeze subsequent reads to
++      // this observed commit rather than refetching a mutable tag by name.
++      const byRef = new Map(refs.map(([sha, ref]) => [ref, sha]));
++      const commit = byRef.get(`refs/tags/v${pin}^{}`) ?? byRef.get(`refs/tags/v${pin}`);
++      checks.tag = { ok: /^[a-f0-9]{40}$/.test(commit ?? ''), tag: `v${pin}`, commit: /^[a-f0-9]{40}$/.test(commit ?? '') ? commit : null };
++    } catch { checks.tag = { ok: false, tag: `v${pin}`, error: 'PUBLIC_TAG_UNAVAILABLE' }; }
++    const expectedSkill = sha256(renderGuide('skill'));
++    const publicBase = checks.tag.ok ? `https://raw.githubusercontent.com/Melade-Inc/live-link-skill/${checks.tag.commit}` : null;
++    try {
++      if (!publicBase) throw new Error('PUBLIC_TAG_UNAVAILABLE');
++      const published = sha256(await fetchBounded(`${publicBase}/skills/live-link/SKILL.md`, { fetchImpl }));
++      checks.skill = { ok: published === expectedSkill, expected: expectedSkill, published };
++    } catch { checks.skill = { ok: false, expected: expectedSkill, error: 'PUBLIC_SKILL_UNAVAILABLE' }; }
++    checks.licenses = { ok: false, selected: releaseLicense, files: [] };
++    if (publicBase) {
++      for (const name of releaseLicenseNames) for (const prefix of ['', 'cli/']) {
++        const file = `${prefix}${name}`, expected = sha256(expectedFiles.get(name));
++        try {
++          const published = sha256(await fetchBounded(`${publicBase}/${file}`, { fetchImpl }));
++          checks.licenses.files.push({ file, ok: published === expected, expected, published });
++        } catch { checks.licenses.files.push({ file, ok: false, expected, error: 'PUBLIC_LICENSE_UNAVAILABLE' }); }
++      }
++      checks.licenses.ok = checks.licenses.files.every(file => file.ok);
++    }
++    try {
++      if (!checks.npm.ok) throw new Error('PACKAGE_METADATA_INVALID');
++      const compressed = await fetchBounded(tarball, { fetchImpl, limit: compressedPackageLimit });
++      checks.package = inspectPublishedPackage(compressed, metadata.dist.integrity, expectedFiles);
++    } catch (error) { checks.package = { ok: false, executed: false, error: /^(PACKAGE|REMOTE)_[A-Z_]+$/.test(error.message) ? error.message : 'PACKAGE_UNAVAILABLE' }; }
++    return { pin, mode: 'published', ok: Object.values(checks).every(check => check.ok), checks };
++  } finally { await rm(temporary, { recursive: true, force: true }); }
++}
++
++if (isMain(import.meta)) {
++  const args = process.argv.slice(2);
++  try {
++    let result;
++    if (args[0] === '--dry-run') {
++      if (!args[1] || !([2, 4].includes(args.length)) || (args.length === 4 && args[2] !== '--pin')) throw new Error('Usage: verify-distribution.mjs --dry-run <built-public-tree> [--pin x.y.z]');
++      const { verifyDistributionTree } = await import('./verify-distribution-tree.mjs');
++      result = await verifyDistributionTree(args[1], { pin: args[3] });
++    } else {
++      if (args.length > 1 || args[0]?.startsWith('-')) throw new Error('Usage: verify-distribution.mjs [x.y.z] or --dry-run <built-public-tree> [--pin x.y.z]');
++      result = await verifyDistribution(args[0] ?? (await readCliPackage()).version);
++    }
++    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
++    process.exitCode = result.ok ? 0 : 1;
++  } catch {
++    process.stderr.write('Distribution verification failed. Usage: verify-distribution.mjs [x.y.z] or --dry-run <built-public-tree> [--pin x.y.z].\n');
++    process.exitCode = 1;
++  }
++}
+diff --git a/tests/ops/build-cli.test.mjs b/tests/ops/build-cli.test.mjs
+new file mode 100644
+index 0000000..9edc1b8
+--- /dev/null
++++ b/tests/ops/build-cli.test.mjs
+@@ -0,0 +1,189 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { execFile } from 'node:child_process';
++import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import { promisify } from 'node:util';
++import { buildCli, checkBundle, checkBundleInputs, licensedOwnedInputs, repositoryRoot } from '../../scripts/release/build-cli.mjs';
++import { composeThirdPartyNotices, readReleaseLicenseFiles, releaseLicenseHashes, reviewedThirdParty, sha256 } from '../../scripts/release/release-licenses.mjs';
++import { buildDistribution, readVersionFile } from '../../scripts/release/build-distribution.mjs';
++
++const exec = promisify(execFile);
++async function scratch(t) {
++  const directory = await mkdtemp(path.join(os.tmpdir(), 'live-link-release-'));
++  t.after(() => rm(directory, { recursive: true, force: true }));
++  return directory;
++}
++
++test('the bundled CLI runs from an empty directory without node_modules and leaks no local paths', { timeout: 180000 }, async t => {
++  const directory = await scratch(t), outDir = path.join(directory, 'cli'), empty = path.join(directory, 'empty'), state = path.join(directory, 'state');
++  await mkdir(empty);
++  const built = await buildCli({ outDir });
++  assert.equal(built.licensePlaceholder, false);
++  assert.deepEqual(built.bundleInputs.owned, [...licensedOwnedInputs].sort());
++  assert.deepEqual(built.bundleInputs.thirdParty.map(entry => `${entry.name}@${entry.version}`), reviewedThirdParty.map(entry => `${entry.name}@${entry.version}`));
++  for (const [name, body] of Object.entries(await readReleaseLicenseFiles())) assert.deepEqual(await readFile(path.join(outDir, name)), body);
++  const bundle = await readFile(path.join(outDir, 'live-link.mjs'), 'utf8');
++  assert.ok(bundle.startsWith('#!/usr/bin/env node\n'));
++  assert.ok(!/["']workspace:/.test(bundle));
++  assert.ok(!bundle.includes(`${repositoryRoot}/`)); assert.ok(!bundle.includes(`${os.homedir()}/`));
++  assert.ok(!/^import\s[^\n]*["']node:sqlite["']/m.test(bundle), 'node:sqlite must load after the Node version gate');
++  for (const match of bundle.matchAll(/^import\s[^\n]*?from\s*["']([^"']+)["'];?$/gm)) assert.match(match[1], /^node:/);
++  assert.ok(bundle.includes(`cliVersion = "${built.version}"`), 'the version constant is inlined');
++  const pkg = JSON.parse(await readFile(path.join(outDir, 'package.json'), 'utf8'));
++  assert.equal(pkg.license, 'Apache-2.0');
++  assert.deepEqual(pkg.files, ['live-link.mjs', 'README.md', 'LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES']);
++  assert.equal(pkg.name, 'live-link'); assert.equal(pkg.version, built.version); assert.equal(pkg.dependencies, undefined);
++  assert.equal(pkg.engines.node, '>=22.12.0'); assert.deepEqual(pkg.publishConfig, { access: 'public', provenance: true });
++  assert.deepEqual(pkg.bin, { 'live-link': './live-link.mjs' }); assert.match(pkg.repository.url, /Melade-Inc\/live-link-skill/);
++  for (const file of built.files) assert.equal((await stat(path.join(outDir, file))).mode & 0o7777, file === 'live-link.mjs' ? 0o755 : 0o644);
++  const env = { PATH: process.env.PATH, HOME: directory, LIVE_LINK_STATE_DIR: state };
++  const help = await exec(process.execPath, [path.join(outDir, 'live-link.mjs'), '--help'], { cwd: empty, env });
++  assert.match(help.stdout, /live-link go/); assert.equal(help.stderr, '');
++  const doctor = await exec(process.execPath, [path.join(outDir, 'live-link.mjs'), 'doctor', '--api-base', 'http://127.0.0.1:1/api/v1', '--allow-localhost'], { cwd: empty, env });
++  const report = JSON.parse(doctor.stdout);
++  assert.equal(report.discovery, 'unavailable'); assert.equal(report.credentialSource, 'none'); assert.equal(report.cliVersion, built.version);
++  assert.equal(report.nodeSupported, true); assert.equal(report.distribution.status, 'unpublished'); assert.equal(doctor.stderr, '');
++  assert.deepEqual(await readdir(empty), []);
++  const refused = await exec(process.execPath, [path.join(outDir, 'live-link.mjs'), 'go', path.join(directory, 'missing'), '--api-base', 'http://127.0.0.1:1/api/v1', '--allow-localhost'], { cwd: empty, env }).catch(error => error);
++  assert.equal(refused.code, 1); assert.match(refused.stderr, /CREDENTIAL_REQUIRED|DIRECTORY_REQUIRED/);
++});
++
++test('bundle checks reject workspace links, local paths and an eager node:sqlite import', () => {
++  const metafile = { outputs: { 'x.mjs': { imports: [{ path: 'node:fs', external: true }] } } };
++  assert.doesNotThrow(() => checkBundle('#!/usr/bin/env node\nimport { readFile } from "node:fs";\n', metafile));
++  assert.throws(() => checkBundle('#!/usr/bin/env node\nimport "node:sqlite";\n', metafile), /node:sqlite/);
++  assert.throws(() => checkBundle(`#!/usr/bin/env node\n// ${repositoryRoot}/x\n`, metafile), /local path/);
++  assert.throws(() => checkBundle('#!/usr/bin/env node\nconst v = "workspace:*";\n', metafile), /workspace:/);
++  assert.doesNotThrow(() => checkBundle('#!/usr/bin/env node\nconst v = { workspace: { id: 1 } };\n', metafile));
++  assert.throws(() => checkBundle('#!/usr/bin/env node\n', { outputs: { 'x.mjs': { imports: [{ path: '@live-link/agent-kit', external: true }] } } }), /agent-kit/);
++});
++
++test('the distribution tree carries the skill, pinned wrappers, installer, VERSION and publish workflow', { timeout: 180000 }, async t => {
++  const outDir = path.join(await scratch(t), 'distribution');
++  const built = await buildDistribution({ outDir });
++  assert.equal(await readVersionFile(outDir), built.version);
++  for (const [name, body] of Object.entries(await readReleaseLicenseFiles())) {
++    assert.deepEqual(await readFile(path.join(outDir, name)), body);
++    assert.deepEqual(await readFile(path.join(outDir, 'cli', name)), body);
++    assert.ok(built.files.includes(name)); assert.ok(built.files.includes(`cli/${name}`));
++  }
++  const skill = await readFile(path.join(outDir, 'skills/live-link/SKILL.md'), 'utf8');
++  assert.match(skill, /^---\nname: live-link\n/);
++  for (const [name, command] of [['publish.sh', 'go'], ['connect.sh', 'connect']]) {
++    const file = path.join(outDir, 'skills/live-link/scripts', name);
++    assert.ok((await stat(file)).mode & 0o100);
++    assert.match(await readFile(file, 'utf8'), new RegExp(`npx -y live-link@${built.version.replace(/\./g, '\\.')} ${command} "\\$@"`));
++  }
++  const install = await readFile(path.join(outDir, 'install.sh'), 'utf8');
++  assert.match(install, new RegExp(`npm install -g "live-link@\\$PIN"`)); assert.match(install, new RegExp(`PIN="${built.version.replace(/\./g, '\\.')}"`)); assert.match(install, /-lt 12/);
++  assert.ok((await stat(path.join(outDir, 'install.sh'))).mode & 0o100);
++  const workflow = await readFile(path.join(outDir, '.github/workflows/publish.yml'), 'utf8');
++  assert.match(workflow, /id-token: write/); assert.match(workflow, /npm publish --provenance --access public/); assert.match(workflow, /tags: \['v\*'\]/);
++  assert.equal(JSON.parse(await readFile(path.join(outDir, 'cli/package.json'), 'utf8')).version, built.version);
++  assert.match(await readFile(path.join(outDir, 'cli/README.md'), 'utf8'), /# Live\.link CLI/);
++  assert.doesNotMatch(workflow, /PLACEHOLDER|grep -q/);
++  assert.match(workflow, /Verify reviewed package and license bytes before execution/);
++  const validation = workflow.split("node --input-type=module <<'NODE'\n")[1].split('          NODE')[0].replace(/^          /gm, '');
++  const verify = () => exec(process.execPath, ['--input-type=module', '-e', validation], { cwd: outDir });
++  await verify();
++  for (const [file, mode] of [['LICENSE', 0o666], ['cli/NOTICE', 0o4644], ['cli/live-link.mjs', 0o4755]]) {
++    const location = path.join(outDir, file), original = (await stat(location)).mode & 0o7777;
++    await chmod(location, mode);
++    await assert.rejects(verify());
++    await chmod(location, original);
++  }
++  for (const file of ['LICENSE', 'cli/NOTICE', 'cli/THIRD_PARTY_NOTICES', 'cli/live-link.mjs']) {
++    const location = path.join(outDir, file), original = await readFile(location);
++    await writeFile(location, Buffer.concat([original, Buffer.from('changed')]));
++    await assert.rejects(verify());
++    await writeFile(location, original);
++  }
++  await writeFile(path.join(outDir, 'cli/unreviewed.mjs'), '');
++  await assert.rejects(verify());
++  await rm(path.join(outDir, 'cli/unreviewed.mjs'));
++  const distributionIsValid = await exec('sh', ['-n', path.join(outDir, 'install.sh')]).then(() => true, () => false);
++  assert.equal(distributionIsValid, true);
++});
++
++
++test('release licensing rejects every missing or modified notice', async t => {
++  const sourceRoot = await scratch(t), target = path.join(sourceRoot, 'packages/cli');
++  await mkdir(target, { recursive: true });
++  const files = await readReleaseLicenseFiles();
++  for (const [name, bytes] of Object.entries(files)) await writeFile(path.join(target, name), bytes);
++  assert.deepEqual(await readReleaseLicenseFiles({ sourceRoot }), files);
++  for (const [name, bytes] of Object.entries(files)) {
++    assert.equal(sha256(bytes), releaseLicenseHashes[name]);
++    await rm(path.join(target, name));
++    await assert.rejects(readReleaseLicenseFiles({ sourceRoot }), /ENOENT/);
++    await writeFile(path.join(target, name), Buffer.concat([bytes, Buffer.from('modified')]));
++    await assert.rejects(readReleaseLicenseFiles({ sourceRoot }), /bytes changed/);
++    await writeFile(path.join(target, name), bytes);
++  }
++});
++
++test('bundle input audit rejects private code, unknown packages and escaped paths', async () => {
++  for (const input of ['packages/contracts/src/index.ts', 'packages/core/src/errors.ts', 'node_modules/.pnpm/zod@4.1.11/node_modules/zod/index.js', 'node_modules/.pnpm/express@5.1.0/node_modules/express/index.js']) {
++    await assert.rejects(checkBundleInputs({ inputs: { [input]: {} } }), /Unreviewed bundle input/);
++  }
++  for (const input of ['../private.js', '/tmp/private.js', 'packages/cli/src/../src/index.mjs']) {
++    await assert.rejects(checkBundleInputs({ inputs: { [input]: {} } }), /Unreviewed bundle input/);
++  }
++  await assert.rejects(checkBundleInputs({ inputs: {} }), /no auditable inputs/);
++});
++
++
++test('bundle dependency audit rejects changed third-party identity/license and linked owned inputs', async t => {
++  const reviewedZod = reviewedThirdParty.find(entry => entry.name === 'zod');
++  const sourceRoot = await realpath(await scratch(t)), target = path.join(sourceRoot, 'packages/cli');
++  await mkdir(target, { recursive: true });
++  for (const [name, bytes] of Object.entries(await readReleaseLicenseFiles())) await writeFile(path.join(target, name), bytes);
++  const dependency = `node_modules/.pnpm/zod@${reviewedZod.version}/node_modules/zod`;
++  const zodRoot = path.join(sourceRoot, dependency);
++  await mkdir(zodRoot, { recursive: true });
++  const metadata = { name: 'zod', version: reviewedZod.version, license: 'MIT' };
++  const license = await readFile(path.join(repositoryRoot, dependency, 'LICENSE'));
++  await writeFile(path.join(zodRoot, 'index.js'), '');
++  await writeFile(path.join(zodRoot, 'package.json'), JSON.stringify(metadata));
++  await writeFile(path.join(zodRoot, 'LICENSE'), license);
++  const inputs = { inputs: { [`${dependency}/index.js`]: {} } };
++  await checkBundleInputs(inputs, { sourceRoot });
++  for (const change of [{ name: 'unknown' }, { version: '99.0.0' }, { license: 'custom' }]) {
++    await writeFile(path.join(zodRoot, 'package.json'), JSON.stringify({ ...metadata, ...change }));
++    await assert.rejects(checkBundleInputs(inputs, { sourceRoot }), /not reviewed/);
++  }
++  await writeFile(path.join(zodRoot, 'package.json'), JSON.stringify(metadata));
++  await writeFile(path.join(zodRoot, 'LICENSE'), 'MIT');
++  await assert.rejects(checkBundleInputs(inputs, { sourceRoot }), /not reviewed/);
++  const linked = path.join(target, 'src');
++  await symlink(path.join(repositoryRoot, 'packages/cli/src'), linked);
++  await assert.rejects(checkBundleInputs({ inputs: { 'packages/cli/src/index.mjs': {} } }, { sourceRoot }), /linked bundle input/);
++});
++
++
++test('every generated release file has an exact umask-independent mode', async t => {
++  const outDir = path.join(await scratch(t), 'distribution');
++  // Use a child process so this test cannot change parallel tests' process umask.
++  const script = `process.umask(0o077); const {buildDistribution} = await import(${JSON.stringify(new URL('../../scripts/release/build-distribution.mjs', import.meta.url).href)}); console.log(JSON.stringify(await buildDistribution({outDir:process.argv[1]})));`;
++  const built = JSON.parse((await exec(process.execPath, ['--input-type=module', '-e', script, outDir])).stdout);
++  for (const file of built.files) {
++    assert.equal((await stat(path.join(outDir, file))).mode & 0o7777, file.endsWith('.sh') || file === 'cli/live-link.mjs' ? 0o755 : 0o644, file);
++  }
++});
++
++test('THIRD_PARTY_NOTICES is the exact composition of every reviewed package license', async () => {
++  const licenses = new Map();
++  for (const entry of reviewedThirdParty) {
++    const key = `${entry.name.replace('/', '+')}@${entry.version}`;
++    const directory = (await readdir(path.join(repositoryRoot, 'node_modules/.pnpm'))).find(name => name === key || name.startsWith(`${key}_`));
++    assert.ok(directory, `${entry.name}@${entry.version} is installed`);
++    const license = await readFile(path.join(repositoryRoot, 'node_modules/.pnpm', directory, 'node_modules', entry.name, 'LICENSE'));
++    assert.equal(sha256(license), entry.licenseSha256, entry.name);
++    licenses.set(entry.name, license);
++  }
++  const files = await readReleaseLicenseFiles();
++  assert.deepEqual(files.THIRD_PARTY_NOTICES, composeThirdPartyNotices(licenses));
++  await assert.throws(() => composeThirdPartyNotices(new Map()), /Missing license bytes/);
++});
+diff --git a/tests/ops/published-package.test.mjs b/tests/ops/published-package.test.mjs
+new file mode 100644
+index 0000000..d50d573
+--- /dev/null
++++ b/tests/ops/published-package.test.mjs
+@@ -0,0 +1,83 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { createHash } from 'node:crypto';
++import { gunzipSync, gzipSync } from 'node:zlib';
++import { fetchBounded, inspectPublishedPackage, unpackedPackageLimit } from '../../scripts/release/published-package.mjs';
++
++function archive(entries, trailing = Buffer.alloc(1024)) {
++  const parts = [];
++  for (const { name, body = Buffer.from('license'), type = '0', mode = 0o644, prefix = '' } of entries) {
++    const header = Buffer.alloc(512);
++    header.write(name); header.write(`${mode.toString(8).padStart(7, '0')}\0`, 100);
++    header.write(`${body.length.toString(8).padStart(11, '0')}\0`, 124);
++    header.fill(32, 148, 156); header.write(type, 156); header.write('ustar\0', 257); header.write(prefix, 345);
++    const sum = header.reduce((total, byte) => total + byte, 0);
++    header.write(`${sum.toString(8).padStart(6, '0')}\0 `, 148);
++    parts.push(header, body, Buffer.alloc(Math.ceil(body.length / 512) * 512 - body.length));
++  }
++  return gzipSync(Buffer.concat([...parts, trailing]));
++}
++const sri = bytes => `sha512-${createHash('sha512').update(bytes).digest('base64')}`;
++const expected = new Map([['LICENSE', Buffer.from('license')]]);
++
++test('published package inspection checks integrity and exact bytes without executing or extracting', () => {
++  const bytes = archive([{ name: 'package/LICENSE' }]);
++  const result = inspectPublishedPackage(bytes, sri(bytes), expected);
++  assert.equal(result.ok, true); assert.equal(result.executed, false);
++  assert.deepEqual(result.files.map(file => file.path), ['package/LICENSE']);
++  assert.throws(() => inspectPublishedPackage(bytes, 'sha1-invalid', expected), /INVALID_INTEGRITY/);
++  const changed = Buffer.from(bytes); changed[10] ^= 1;
++  assert.throws(() => inspectPublishedPackage(changed, sri(bytes), expected), /INTEGRITY_MISMATCH/);
++});
++
++test('published package rejects omitted/duplicate/extra files, path metadata, links, changed bytes and bad modes', () => {
++  const scenarios = [
++    [[], /FILE_MISMATCH/],
++    [[{ name: 'package/LICENSE' }, { name: 'package/LICENSE' }], /FILE_MISMATCH/],
++    [[{ name: 'package/LICENSE' }, { name: 'package/extra' }], /FILE_MISMATCH/],
++    [[{ name: 'package/../LICENSE' }], /FILE_MISMATCH/],
++    [[{ name: '/package/LICENSE' }], /FILE_MISMATCH/],
++    [[{ name: 'package/LICENSE', prefix: '../private' }], /UNSAFE_ENTRY/],
++    [[{ name: 'package/LICENSE', type: '1' }], /UNSAFE_ENTRY/],
++    [[{ name: 'package/LICENSE', type: '2' }], /UNSAFE_ENTRY/],
++    [[{ name: 'package/LICENSE', type: 'x' }], /UNSAFE_ENTRY/],
++    [[{ name: 'package/LICENSE', type: 'g' }], /UNSAFE_ENTRY/],
++    [[{ name: 'package/LICENSE', body: Buffer.from('wrong terms') }], /CONTENT_MISMATCH/],
++    [[{ name: 'package/LICENSE', mode: 0o755 }], /MODE_MISMATCH/],
++    [[{ name: 'package/LICENSE', mode: 0o666 }], /MODE_MISMATCH/],
++    [[{ name: 'package/LICENSE', mode: 0o4644 }], /MODE_MISMATCH/],
++  ];
++  for (const [entries, error] of scenarios) {
++    const bytes = archive(entries);
++    assert.throws(() => inspectPublishedPackage(bytes, sri(bytes), expected), error);
++  }
++  const noEnd = archive([{ name: 'package/LICENSE' }], Buffer.alloc(0));
++  assert.throws(() => inspectPublishedPackage(noEnd, sri(noEnd), expected), /FILE_MISMATCH/);
++  const hidden = archive([{ name: 'package/LICENSE' }], Buffer.concat([Buffer.alloc(1024), Buffer.from('hidden')]));
++  assert.throws(() => inspectPublishedPackage(hidden, sri(hidden), expected), /INVALID_TAR/);
++  const bomb = gzipSync(Buffer.alloc(unpackedPackageLimit + 1));
++  assert.throws(() => inspectPublishedPackage(bomb, sri(bomb), expected), /INVALID_ARCHIVE/);
++});
++
++test('bounded release fetches prohibit redirects and bound actual streamed bytes', async () => {
++  let received;
++  const body = await fetchBounded('https://registry.npmjs.org/live-link/0.1.0', {
++    fetchImpl: async (_url, options) => { received = options; return new Response('safe'); }, limit: 4,
++  });
++  assert.equal(body.toString(), 'safe'); assert.equal(received.redirect, 'error'); assert.equal(received.credentials, 'omit');
++  await assert.rejects(fetchBounded('https://example.invalid', { fetchImpl: async () => new Response('too large'), limit: 3 }), /REMOTE_BYTE_LIMIT/);
++  await assert.rejects(fetchBounded('https://example.invalid', { fetchImpl: async () => new Response('x', { headers: { 'content-length': '99' } }), limit: 3 }), /REMOTE_BYTE_LIMIT/);
++  await assert.rejects(fetchBounded('https://example.invalid', { fetchImpl: async () => new Response('missing', { status: 404 }) }), /REMOTE_HTTP_ERROR/);
++});
++
++test('tar numeric fields reject high-bit and hidden octal encodings even with a valid checksum', () => {
++  for (const index of [100, 124, 125]) {
++    const tar = gunzipSync(archive([{ name: 'package/LICENSE' }]));
++    tar[index] |= 0x80;
++    tar.fill(32, 148, 156);
++    const checksum = tar.subarray(0, 512).reduce((sum, byte) => sum + byte, 0);
++    tar.write(`${checksum.toString(8).padStart(6, '0')}\0 `, 148);
++    const bytes = gzipSync(tar);
++    assert.throws(() => inspectPublishedPackage(bytes, sri(bytes), expected), /INVALID_TAR/);
++  }
++});
+diff --git a/tests/ops/verify-distribution.test.mjs b/tests/ops/verify-distribution.test.mjs
+new file mode 100644
+index 0000000..a99d84f
+--- /dev/null
++++ b/tests/ops/verify-distribution.test.mjs
+@@ -0,0 +1,200 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { execFile } from 'node:child_process';
++import { createHash } from 'node:crypto';
++import { chmod, cp, lstat, mkdir, open, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import { promisify } from 'node:util';
++import { renderGuide } from '../../packages/agent-kit/src/index.js';
++import { buildDistribution } from '../../scripts/release/build-distribution.mjs';
++import { verifyDistribution } from '../../scripts/release/verify-distribution.mjs';
++import { captureTreeFile, verifyDistributionTree } from '../../scripts/release/verify-distribution-tree.mjs';
++import { repositoryRoot } from '../../scripts/release/build-cli.mjs';
++
++const exec = promisify(execFile);
++async function scratch(t) {
++  const directory = await mkdtemp(path.join(os.tmpdir(), 'live-link-verify-test-'));
++  t.after(() => rm(directory, { recursive: true, force: true }));
++  return directory;
++}
++
++test('offline dry run verifies the licensed tree and packed CLI without claiming release approval', { timeout: 180000 }, async t => {
++  const directory = await scratch(t), tree = path.join(directory, 'public-repo');
++  const built = await buildDistribution({ outDir: tree });
++  const before = await readFile(path.join(tree, 'cli/live-link.mjs'));
++  const result = await verifyDistributionTree(tree, { pin: built.version });
++  assert.equal(result.mode, 'dry-run'); assert.equal(result.ok, true); assert.equal(result.releaseReady, false);
++  assert.equal(result.release.license.status, 'selected-artifact-verified');
++  assert.equal(result.release.license.selected, 'Apache-2.0');
++  assert.equal(result.release.license.releaseApproved, false);
++  for (const name of ['npm', 'tag', 'skill']) assert.equal(result.release[name].status, 'not-checked');
++  assert.equal(result.checks.tree.files.length, built.files.length);
++  assert.ok(result.checks.tree.files.every(file => /^[a-f0-9]{64}$/.test(file.sha256)));
++  assert.equal(result.checks.package.offline, true); assert.equal(result.checks.package.lifecycleScripts, false);
++  assert.equal(result.checks.package.dependencyInstall, false); assert.equal(result.checks.package.localPackageInstall, true);
++  assert.equal(result.checks.package.smoke.installedBin, 'passed');
++  assert.equal(result.checks.package.smoke.help, 'passed'); assert.equal(result.checks.package.smoke.doctor, 'passed');
++  assert.equal(result.checks.package.smoke.credentials, 'none'); assert.equal(result.checks.package.smoke.discovery, 'unavailable');
++  assert.deepEqual(result.checks.package.files, built.files.filter(file => file.startsWith('cli/')).map(file => file.replace(/^cli\//, 'package/')).sort());
++  assert.deepEqual(await readFile(path.join(tree, 'cli/live-link.mjs')), before);
++  assert.deepEqual(await readdir(directory), ['public-repo'], 'the verifier removes its own pack/build/smoke directories');
++  assert.equal(JSON.stringify(result).includes(directory), false, 'report omits machine paths');
++});
++
++test('tampered output fails before packing or executing and cannot carry hidden dependencies or commands', { timeout: 180000 }, async t => {
++  const directory = await scratch(t), pristine = path.join(directory, 'pristine');
++  const built = await buildDistribution({ outDir: pristine });
++  const marker = path.join(directory, 'must-not-execute');
++  const cases = [
++    ['VERSION', () => '99.0.0\n'],
++    ...['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES', 'cli/LICENSE', 'cli/NOTICE', 'cli/THIRD_PARTY_NOTICES'].map(file => [file, value => `${value}\nUnreviewed terms\n`]),
++    ['cli/package.json', value => JSON.stringify({ ...JSON.parse(value), license: 'MIT' })],
++    ['cli/package.json', value => JSON.stringify({ ...JSON.parse(value), version: '99.0.0' })],
++    ['cli/package.json', value => JSON.stringify({ ...JSON.parse(value), dependencies: { 'unexpected-package': '*' } })],
++    ['cli/package.json', value => JSON.stringify({ ...JSON.parse(value), scripts: { prepack: 'exit 99' } })],
++    ['cli/live-link.mjs', value => `${value}\nimport {writeFileSync} from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'unsafe');\n`],
++    ['skills/live-link/SKILL.md', value => `${value}\nUnreviewed setup instructions\n`],
++    ['skills/live-link/scripts/publish.sh', value => value.replace(' go ', ' logout ')],
++    ['skills/live-link/scripts/connect.sh', value => value.replace(built.version, '99.0.0')],
++    ['install.sh', value => `${value}\nexit 99\n`],
++    ['.github/workflows/publish.yml', value => value.replace('--provenance', '--ignore-scripts')],
++  ];
++  for (const [index, [file, change]] of cases.entries()) {
++    await t.test(`${index + 1}: ${file}`, async () => {
++      const tree = path.join(directory, `tampered-${index}`); await cp(pristine, tree, { recursive: true });
++      await writeFile(path.join(tree, file), change(await readFile(path.join(tree, file), 'utf8')));
++      const result = await verifyDistributionTree(tree);
++      assert.equal(result.ok, false); assert.equal(result.releaseReady, false); assert.equal(result.checks.package, undefined);
++      assert.deepEqual(result.checks.tree.problems, [{ file, reason: 'content-mismatch' }]);
++    });
++  }
++  assert.equal((await readdir(directory)).includes('must-not-execute'), false);
++});
++
++test('missing, extra, non-executable and symlink files cannot pass; wrong source pins fail before pack', { timeout: 180000 }, async t => {
++  const directory = await scratch(t), pristine = path.join(directory, 'pristine');
++  await buildDistribution({ outDir: pristine });
++  const scenarios = [
++    ['missing-license', tree => rm(path.join(tree, 'cli/LICENSE')), { file: 'cli/LICENSE', reason: 'missing-file' }],
++    ['missing-notice', tree => rm(path.join(tree, 'THIRD_PARTY_NOTICES')), { file: 'THIRD_PARTY_NOTICES', reason: 'missing-file' }],
++    ['missing', tree => rm(path.join(tree, 'skills/live-link/SKILL.md')), { file: 'skills/live-link/SKILL.md', reason: 'missing-file' }],
++    ['extra', tree => writeFile(path.join(tree, 'cli/unreviewed.mjs'), 'export default 1;'), { file: 'cli/unreviewed.mjs', reason: 'unexpected-file' }],
++    ['unsafe-mode', tree => chmod(path.join(tree, 'cli/LICENSE'), 0o666), 'TREE_UNSAFE_MODE'],
++    ['setuid', tree => chmod(path.join(tree, 'cli/live-link.mjs'), 0o4755), 'TREE_UNSAFE_MODE'],
++    ['mode', tree => chmod(path.join(tree, 'skills/live-link/scripts/publish.sh'), 0o644), { file: 'skills/live-link/scripts/publish.sh', reason: 'executable-bit-mismatch' }],
++    ['symlink', tree => symlink(pristine, path.join(tree, 'workspace')), 'TREE_UNSAFE_ENTRY'],
++    ['empty-directory', tree => mkdir(path.join(tree, 'node_modules')), 'TREE_EMPTY_DIRECTORY'],
++    ['oversize', tree => writeFile(path.join(tree, 'large'), Buffer.alloc(16 * 1024 * 1024 + 1)), 'TREE_BYTE_LIMIT'],
++  ];
++  for (const [name, change, expected] of scenarios) await t.test(name, async () => {
++    const tree = path.join(directory, name); await cp(pristine, tree, { recursive: true }); await change(tree);
++    const result = await verifyDistributionTree(tree);
++    assert.equal(result.ok, false); assert.equal(result.checks.package, undefined);
++    if (typeof expected === 'string') assert.equal(result.checks.tree.error, expected);
++    else assert.deepEqual(result.checks.tree.problems, [expected]);
++  });
++  const missing = await verifyDistributionTree(path.join(directory, 'absent'));
++  assert.equal(missing.checks.tree.error, 'TREE_MISSING');
++  const wrongPin = await verifyDistributionTree(pristine, { pin: '99.0.0' });
++  assert.equal(wrongPin.checks.pin.ok, false); assert.equal(wrongPin.checks.tree, undefined);
++  await assert.rejects(verifyDistributionTree(pristine, { pin: 'latest' }), /exact/);
++});
++
++test('explicit dry-run CLI returns JSON with independent local and release outcomes', { timeout: 180000 }, async t => {
++  const directory = await scratch(t), tree = path.join(directory, 'tree'); await buildDistribution({ outDir: tree });
++  const command = path.join(repositoryRoot, 'scripts/release/verify-distribution.mjs');
++  const env = { PATH: process.env.PATH, HOME: directory };
++  const passed = await exec(process.execPath, [command, '--dry-run', tree], { cwd: directory, env });
++  assert.equal(passed.stderr, ''); assert.equal(JSON.parse(passed.stdout).ok, true); assert.equal(JSON.parse(passed.stdout).releaseReady, false);
++  await writeFile(path.join(tree, 'VERSION'), '99.0.0\n');
++  const denied = await exec(process.execPath, [command, '--dry-run', tree], { cwd: directory, env }).catch(error => error);
++  assert.equal(denied.code, 1); assert.equal(JSON.parse(denied.stdout).ok, false);
++  const invalid = await exec(process.execPath, [command, '--dry-run'], { cwd: directory, env }).catch(error => error);
++  assert.equal(invalid.code, 1); assert.match(invalid.stderr, /Usage:/);
++  await buildDistribution({ outDir: tree });
++  const absentNpm = await exec(process.execPath, [command, '--dry-run', tree], { cwd: directory, env: { ...env, PATH: directory } }).catch(error => error);
++  assert.equal(absentNpm.code, 1);
++  assert.deepEqual(JSON.parse(absentNpm.stdout).checks.package, { ok: false, error: 'REQUIRED_COMMAND_UNAVAILABLE', command: 'npm' });
++});
++
++test('published verification binds the exact npm artifact and tagged license notices without executing downloads', { timeout: 180000 }, async t => {
++  const directory = await scratch(t), tree = path.join(directory, 'tree');
++  const { version: pin } = await buildDistribution({ outDir: tree });
++  const cache = path.join(directory, 'cache'); await mkdir(cache);
++  const config = path.join(directory, 'npmrc'), globalConfig = path.join(directory, 'npm-globalrc'); await writeFile(config, ''); await writeFile(globalConfig, '');
++  const packed = await exec('npm', ['pack', '--offline', '--ignore-scripts', '--json', '--pack-destination', directory], {
++    cwd: path.join(tree, 'cli'), env: { PATH: process.env.PATH, HOME: directory, npm_config_userconfig: config, npm_config_globalconfig: globalConfig, npm_config_cache: cache },
++  });
++  const [pack] = JSON.parse(packed.stdout), tarball = await readFile(path.join(directory, pack.filename));
++  const integrity = `sha512-${createHash('sha512').update(tarball).digest('base64')}`;
++  const sha = 'a'.repeat(40), tagObject = 'b'.repeat(40), rawBase = `https://raw.githubusercontent.com/Melade-Inc/live-link-skill/${sha}`;
++  const tarballUrl = `https://registry.npmjs.org/live-link/-/live-link-${pin}.tgz`;
++  const metadataUrl = `https://registry.npmjs.org/live-link/${pin}`;
++  const responses = new Map([
++    [metadataUrl, JSON.stringify({ name: 'live-link', version: pin, license: 'Apache-2.0', dist: { tarball: tarballUrl, integrity } })],
++    [tarballUrl, tarball], [`${rawBase}/skills/live-link/SKILL.md`, renderGuide('skill')],
++  ]);
++  for (const file of ['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES']) for (const prefix of ['', 'cli/']) responses.set(`${rawBase}/${prefix}${file}`, await readFile(path.join(tree, prefix, file)));
++  const invocations = [];
++  const dependencies = {
++    execFileImpl: async (command, args) => { invocations.push([command, args]); assert.equal(command, 'git'); return { stdout: `${tagObject}\trefs/tags/v${pin}\n${sha}\trefs/tags/v${pin}^{}\n` }; },
++    fetchImpl: async (url, options) => { invocations.push(['fetch', url]); assert.equal(options.redirect, 'error'); assert.equal(options.credentials, 'omit'); return responses.has(url) ? new Response(responses.get(url)) : new Response('', { status: 404 }); },
++  };
++  const result = await verifyDistribution(pin, dependencies);
++  assert.equal(result.ok, true, JSON.stringify(result)); assert.deepEqual(Object.keys(result.checks), ['npm', 'tag', 'skill', 'licenses', 'package']);
++  assert.equal(result.checks.tag.commit, sha); assert.equal(result.checks.package.executed, false);
++  assert.equal(result.checks.package.integrity, 'sha512-verified'); assert.equal(result.checks.licenses.files.length, 6);
++  assert.ok(invocations.some(([command, url]) => command === 'fetch' && url === tarballUrl));
++  assert.ok(invocations.filter(([command]) => command !== 'fetch').every(([command]) => command === 'git'), 'published verification never runs npm install, pack, tar or downloaded code');
++  const badSkill = await verifyDistribution(pin, { ...dependencies, fetchImpl: async (url, options) => url.endsWith('/SKILL.md') ? new Response('changed skill') : dependencies.fetchImpl(url, options) });
++  assert.equal(badSkill.ok, false); assert.equal(badSkill.checks.skill.ok, false);
++  for (const suffix of ['/LICENSE', '/THIRD_PARTY_NOTICES', '/cli/NOTICE']) {
++    const broken = await verifyDistribution(pin, { ...dependencies, fetchImpl: async (url, options) => url === rawBase + suffix ? new Response('') : dependencies.fetchImpl(url, options) });
++    assert.equal(broken.ok, false); assert.equal(broken.checks.licenses.ok, false);
++  }
++  const corrupt = Buffer.from(tarball); corrupt[10] ^= 1;
++  const changedPackage = await verifyDistribution(pin, { ...dependencies, fetchImpl: async (url, options) => url === tarballUrl ? new Response(corrupt) : dependencies.fetchImpl(url, options) });
++  assert.equal(changedPackage.checks.package.error, 'PACKAGE_INTEGRITY_MISMATCH');
++  const wrongMetadata = JSON.parse(responses.get(metadataUrl)); wrongMetadata.license = 'MIT';
++  const badMetadata = await verifyDistribution(pin, { ...dependencies, fetchImpl: async (url, options) => url === metadataUrl ? new Response(JSON.stringify(wrongMetadata)) : dependencies.fetchImpl(url, options) });
++  assert.equal(badMetadata.checks.npm.ok, false); assert.equal(badMetadata.checks.package.error, 'PACKAGE_METADATA_INVALID');
++  wrongMetadata.license = 'Apache-2.0'; wrongMetadata.dist.tarball = 'https://untrusted.invalid/secret';
++  const wrongHost = await verifyDistribution(pin, { ...dependencies, fetchImpl: async (url, options) => { assert.notEqual(url, wrongMetadata.dist.tarball); return url === metadataUrl ? new Response(JSON.stringify(wrongMetadata)) : dependencies.fetchImpl(url, options); } });
++  assert.equal(wrongHost.checks.package.error, 'PACKAGE_METADATA_INVALID');
++  const unavailable = await verifyDistribution(pin, { execFileImpl: async () => { throw new Error('unavailable'); }, fetchImpl: async () => new Response('', { status: 404 }) });
++  assert.equal(unavailable.ok, false); for (const check of Object.values(unavailable.checks)) assert.equal(check.ok, false);
++  await assert.rejects(verifyDistribution('latest', dependencies), /exact version pin/);
++  await assert.rejects(verifyDistribution('99.0.0', dependencies), /exact reviewed source/);
++});
++
++
++test('tree capture rejects replacement and growth around inspection and always closes the descriptor', async t => {
++  const directory = await scratch(t), file = path.join(directory, 'LICENSE'), other = path.join(directory, 'other');
++  await writeFile(file, 'safe'); await chmod(file, 0o644);
++  let expected = await lstat(file);
++  await writeFile(other, 'private'); await rm(file); await symlink(other, file);
++  await assert.rejects(captureTreeFile(file, expected, 16), error => ['ELOOP', 'TREE_CHANGED'].includes(error.code ?? error.message));
++  await rm(file); await writeFile(file, 'safe'); await chmod(file, 0o644); expected = await lstat(file);
++  let closed = false, stats = 0;
++  await assert.rejects(captureTreeFile(file, expected, 8, {
++    openFile: async (...args) => {
++      const handle = await open(...args);
++      return {
++        stat: async () => { const result = await handle.stat(); if (++stats === 1) await writeFile(file, 'a'.repeat(32)); return result; },
++        read: (...readArgs) => handle.read(...readArgs),
++        close: async () => { closed = true; await handle.close(); },
++      };
++    },
++  }), /TREE_BYTE_LIMIT/);
++  assert.equal(closed, true);
++  await writeFile(file, 'safe'); expected = await lstat(file); closed = false;
++  await assert.rejects(captureTreeFile(file, expected, 32, {
++    checkParents: async () => { throw new Error('TREE_CHANGED'); },
++    openFile: async (...args) => {
++      const handle = await open(...args);
++      return { stat: () => handle.stat(), read: () => { throw new Error('must not read after a changed directory'); }, close: async () => { closed = true; await handle.close(); } };
++    },
++  }), /TREE_CHANGED/);
++  assert.equal(closed, true);
++});
+-- 
+2.43.0
+

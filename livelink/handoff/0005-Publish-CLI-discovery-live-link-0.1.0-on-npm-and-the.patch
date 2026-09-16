@@ -1,0 +1,238 @@
+From 96ff5ed37ce00bb69c8bf85ee9284b5a66ab2de6 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 16 Sep 2026 21:04:25 +0000
+Subject: [PATCH] Publish CLI discovery: live-link 0.1.0 on npm and the public
+ skill
+
+Flip registry.distribution to published for live-link 0.1.0 with the
+install command and the skill install line, drop Public CLI installation
+from the unavailable list, and show the install commands in the CLI README.
+Every guide, llms.txt, agent.json and the CLI help now render the
+published variant; the unpublished variant remains tested through the
+registry override.
+
+Add the published-cli CI job: it runs the pinned package from a clean
+directory and verifies npm metadata, tarball bytes, public tag, skill and
+notices against this source. The job is red until the pin exists on npm,
+which is the merge gate. The bundled CLI inlines the registry, so this
+commit is also the release commit: tag its head cli-v0.1.0, let the tag
+workflow publish, re-run CI, then merge (docs/operations/CLI_RELEASE.md).
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017twst4MFpEXdY2hjihXFdf
+---
+ .github/workflows/ci.yml             | 20 ++++++++++
+ docs/operations/CLI_RELEASE.md       | 58 +++++++++++++---------------
+ packages/agent-kit/src/index.js      |  4 +-
+ packages/agent-kit/src/index.test.ts | 16 +++++++-
+ packages/cli/README.md               | 11 +++++-
+ tests/ops/build-cli.test.mjs         |  3 +-
+ 6 files changed, 74 insertions(+), 38 deletions(-)
+
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 142143e..7351e28 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -22,3 +22,23 @@ jobs:
+       - run: pnpm --filter @live-link/cli test
+       - run: node --test tests/ops/*.test.mjs
+       - run: pnpm build
++  published-cli:
++    name: Published CLI matches this source (npm and public skill)
++    runs-on: ubuntu-latest
++    timeout-minutes: 15
++    steps:
++      - uses: actions/checkout@v4
++      - uses: pnpm/action-setup@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 24
++          cache: pnpm
++      - run: pnpm install --frozen-lockfile
++      - name: Run the pinned public package from a clean directory
++        run: |
++          PIN="$(node -p 'require("./packages/cli/package.json").version')"
++          mkdir -p "$RUNNER_TEMP/clean" && cd "$RUNNER_TEMP/clean"
++          npx -y "live-link@${PIN}" --help >/dev/null
++          npx -y "live-link@${PIN}" doctor | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const d=JSON.parse(s);if(d.cliVersion!==process.argv[1]||d.distribution.status!=="published")process.exit(1)})' "${PIN}"
++      - name: Verify npm metadata, tarball bytes, public tag, skill and notices against this source
++        run: node scripts/release/verify-distribution.mjs "$(node -p 'require("./packages/cli/package.json").version')"
+diff --git a/docs/operations/CLI_RELEASE.md b/docs/operations/CLI_RELEASE.md
+index 454e98d..b8f83ef 100644
+--- a/docs/operations/CLI_RELEASE.md
++++ b/docs/operations/CLI_RELEASE.md
+@@ -22,38 +22,32 @@ Offline evidence and limits: [DISTRIBUTION_DRY_RUN.md](DISTRIBUTION_DRY_RUN.md).
+ 
+ ## Release
+ 
+-From `main` at the reviewed commit, with `packages/cli/package.json` and `packages/cli/src/version.mjs`
+-agreeing on the pin:
+-
+-```sh
+-pnpm release:build
+-node scripts/release/verify-distribution.mjs --dry-run dist/distribution     # must print ok: true
+-git tag cli-v0.1.0 && git push origin cli-v0.1.0
+-```
+-
+-`release-cli.yml` rebuilds and re-verifies on the runner, then pushes the tree and tag `v0.1.0` to the
+-skill repository. Its `publish.yml` verifies every file hash and mode again, smoke-tests the bundle,
+-and publishes to npm with provenance. A tag that already exists in the skill repository fails the
+-release; bump the pin instead of re-tagging.
+-
+-## Verify the published release
+-
+-```sh
+-node scripts/release/verify-distribution.mjs 0.1.0            # npm metadata, tag, skill, notices, tarball bytes
+-npx -y live-link@0.1.0 doctor                                  # from a clean container, no repository checkout
+-npx skills add Melade-Inc/live-link-skill --skill live-link --list
+-```
+-
+-All three must pass before the flip.
+-
+-## Flip discovery to published
+-
+-Merge the prepared "publish CLI discovery" change: `registry.distribution` becomes
+-`{ status: 'published', version: '0.1.0', install: 'npx -y live-link@0.1.0', skill: 'npx skills add …' }`,
+-`Public CLI installation` leaves the `unavailable` list, and CI gains the `published-cli` job that runs
+-the pinned package from the registry. Deploy management; confirm `https://live.link/start.md` and
+-`/.well-known/agent.json` show the install command. The flip PR cannot merge before publication: its
+-CI job fails while the pin is not on npm.
++The bundled CLI inlines the registry, so the published artifact must be built from the same source
++that declares it published. The release commit is therefore the flip commit:
++
++1. Open the "publish CLI discovery" PR: `registry.distribution` becomes
++   `{ status: 'published', version: '0.1.0', install: 'npx -y live-link@0.1.0', skill: 'npx skills add …' }`,
++   `Public CLI installation` leaves `unavailable`, CI gains the `published-cli` job, and the CLI README
++   shows the install commands. Its `published-cli` job is red until the pin exists; that is the gate.
++2. On that PR's head commit, run the dry run and tag:
++   ```sh
++   pnpm release:build
++   node scripts/release/verify-distribution.mjs --dry-run dist/distribution     # must print ok: true
++   git tag cli-v0.1.0 <pr-head-sha> && git push origin cli-v0.1.0
++   ```
++   `release-cli.yml` rebuilds and re-verifies on the runner, then pushes the tree and tag `v0.1.0` to
++   the skill repository, whose `publish.yml` verifies every file hash and mode, smoke-tests the bundle
++   and publishes to npm with provenance. A tag that already exists there fails the release; bump the
++   pin instead of re-tagging.
++3. Verify the published release from the same commit:
++   ```sh
++   node scripts/release/verify-distribution.mjs 0.1.0            # npm metadata, tag, skill, notices, tarball bytes
++   npx -y live-link@0.1.0 doctor                                  # clean container, no checkout
++   npx skills add Melade-Inc/live-link-skill --skill live-link --list
++   ```
++4. Re-run the PR's CI; `published-cli` now passes. Squash-merge (the tree is identical to the tagged
++   commit, so the verifier keeps matching). Deploy management; confirm `https://live.link/start.md`
++   and `/.well-known/agent.json` show the install command and `skill`.
+ 
+ ## Rollback
+ 
+diff --git a/packages/agent-kit/src/index.js b/packages/agent-kit/src/index.js
+index f5d6a6b..c9b9f05 100644
+--- a/packages/agent-kit/src/index.js
++++ b/packages/agent-kit/src/index.js
+@@ -4,7 +4,7 @@ export const registry = Object.freeze({
+   start: 'https://live.link/start', api: 'https://app.live.link/api/v1',
+   setup: 'https://app.live.link/settings', openapi: 'https://app.live.link/api/v1/openapi',
+   // Flip to published only after a verified public npm release; every guide renders its honest variant from this state.
+-  distribution: { status: 'unpublished', package: 'live-link', version: null, install: null, node: '>=22.12.0', skill: null, installScript: null },
++  distribution: { status: 'published', package: 'live-link', version: '0.1.0', install: 'npx -y live-link@0.1.0', node: '>=22.12.0', skill: 'npx skills add Melade-Inc/live-link-skill --skill live-link', installScript: null },
+   authentication: { type: 'bearer', environment: 'LIVE_LINK_TOKEN', scopes: ['artifact:read', 'artifact:write', 'artifact:publish'] },
+   limits: { decodedBytesPerVersion: 3145728, requestBytes: 4194304, filesPerVersion: 30, documentBlockBytes: 524288 },
+   capabilities: [
+@@ -27,7 +27,7 @@ export const registry = Object.freeze({
+     { name: 'Hermes', route: 'Terminal CLI or HTTP, with host permission', status: 'fresh/repeat/resume host acceptance pending' },
+     { name: 'ChatGPT / Claude remote chat', route: 'Read the guide; use the dashboard handoff', status: 'authorized hosted connector and MCP unavailable' },
+   ],
+-  unavailable: ['Hosted MCP', 'Agent OAuth / automatic authorization', 'Public CLI installation', 'Staged or resumable byte uploads', 'Arbitrary customer backend hosting'],
++  unavailable: ['Hosted MCP', 'Agent OAuth / automatic authorization', 'Staged or resumable byte uploads', 'Arbitrary customer backend hosting'],
+ });
+ 
+ /** The published CLI invocation, or null while distribution is unpublished so no page or guide can invent an install command. */
+diff --git a/packages/agent-kit/src/index.test.ts b/packages/agent-kit/src/index.test.ts
+index 6084ce3..6ab9fa6 100644
+--- a/packages/agent-kit/src/index.test.ts
++++ b/packages/agent-kit/src/index.test.ts
+@@ -1,6 +1,6 @@
+ import { describe, expect, it } from 'vitest';
+ import { LIMITS } from '../../contracts/src/index';
+-import { agentDocument, registry, renderGuide } from './index.js';
++import { agentDocument, cliCommand, registry, renderGuide } from './index.js';
+ import { buildOpenApiDocument } from '../../../apps/web/src/lib/openapi';
+ 
+ describe('implemented capability registry', () => {
+@@ -9,7 +9,9 @@ describe('implemented capability registry', () => {
+     const paths = buildOpenApiDocument().paths as Record<string, Record<string, { 'x-required-scopes'?: string[] }>>;
+     for (const capability of registry.capabilities) expect(paths[capability.path][capability.method.toLowerCase()]['x-required-scopes']).toContain(capability.scope);
+     expect(agentDocument().capabilities).toEqual(registry.capabilities.map(c => c.id));
+-    expect(registry.distribution.install).toBeNull();
++    expect(registry.distribution.install).toBe(`npx -y ${registry.distribution.package}@${registry.distribution.version}`);
++    expect(cliCommand()).toBe(registry.distribution.install);
++    expect(registry.unavailable).not.toContain('Public CLI installation');
+   });
+   it('generates guides with current limits, explicit authorization and honest host status', () => {
+     for (const kind of ['start', 'agents', 'skill', 'llms', 'architecture']) {
+@@ -18,9 +20,19 @@ describe('implemented capability registry', () => {
+       expect(guide).toContain(registry.start);
+       expect(guide).not.toContain('npx @live-link');
+       expect(guide).not.toContain('npm install @live-link');
++      if (kind !== 'architecture') expect(guide).toContain(registry.distribution.install as string);
+     }
+     expect(renderGuide('agents')).toContain('never overwrite');
+     expect(renderGuide('start')).toContain('Hosted MCP and agent OAuth are unavailable');
+     expect(renderGuide('skill')).toMatch(/^---\nname: live-link\n/);
+   });
++  it('renders the honest unpublished variant when distribution is not published', () => {
++    const unpublished = { ...registry, distribution: { ...registry.distribution, status: 'unpublished' as const, version: null, install: null, skill: null } };
++    expect(cliCommand({ registry: unpublished })).toBeNull();
++    for (const kind of ['start', 'skill', 'llms']) {
++      const guide = renderGuide(kind, { registry: unpublished });
++      expect(guide).toContain('not yet published');
++      expect(guide).not.toContain('npx -y live-link');
++    }
++  });
+ });
+diff --git a/packages/cli/README.md b/packages/cli/README.md
+index 41c2dfb..c27aed1 100644
+--- a/packages/cli/README.md
++++ b/packages/cli/README.md
+@@ -1,6 +1,15 @@
+ # Live.link CLI
+ 
+-This is an unpublished, reviewed-source foundation. There is no supported public npm install command yet. From an authorized checkout with workspace dependencies installed:
++Published as the npm package `live-link` (Node 22.12 or newer) and the skill `Melade-Inc/live-link-skill`:
++
++```sh
++npx skills add Melade-Inc/live-link-skill --skill live-link   # persistent skill for coding agents
++npx -y live-link@0.1.0 go ./dist                              # private draft, returns a dashboard review URL
++npx -y live-link@0.1.0 go ./dist --yes --slug my-app --audience public   # publish after approval; later --yes updates the same link
++npx -y live-link@0.1.0 connect ./dist                         # credential-free local stdio MCP config
++```
++
++Verify the pin before use; never run an unpinned package. From an authorized source checkout with workspace dependencies installed, the same commands run as:
+ 
+ ```sh
+ node packages/cli/bin/live-link.mjs --help
+diff --git a/tests/ops/build-cli.test.mjs b/tests/ops/build-cli.test.mjs
+index 9edc1b8..1054ad9 100644
+--- a/tests/ops/build-cli.test.mjs
++++ b/tests/ops/build-cli.test.mjs
+@@ -6,6 +6,7 @@ import os from 'node:os';
+ import path from 'node:path';
+ import { promisify } from 'node:util';
+ import { buildCli, checkBundle, checkBundleInputs, licensedOwnedInputs, repositoryRoot } from '../../scripts/release/build-cli.mjs';
++import { registry } from '../../packages/agent-kit/src/index.js';
+ import { composeThirdPartyNotices, readReleaseLicenseFiles, releaseLicenseHashes, reviewedThirdParty, sha256 } from '../../scripts/release/release-licenses.mjs';
+ import { buildDistribution, readVersionFile } from '../../scripts/release/build-distribution.mjs';
+ 
+@@ -44,7 +45,7 @@ test('the bundled CLI runs from an empty directory without node_modules and leak
+   const doctor = await exec(process.execPath, [path.join(outDir, 'live-link.mjs'), 'doctor', '--api-base', 'http://127.0.0.1:1/api/v1', '--allow-localhost'], { cwd: empty, env });
+   const report = JSON.parse(doctor.stdout);
+   assert.equal(report.discovery, 'unavailable'); assert.equal(report.credentialSource, 'none'); assert.equal(report.cliVersion, built.version);
+-  assert.equal(report.nodeSupported, true); assert.equal(report.distribution.status, 'unpublished'); assert.equal(doctor.stderr, '');
++  assert.equal(report.nodeSupported, true); assert.deepEqual(report.distribution, registry.distribution); assert.equal(doctor.stderr, '');
+   assert.deepEqual(await readdir(empty), []);
+   const refused = await exec(process.execPath, [path.join(outDir, 'live-link.mjs'), 'go', path.join(directory, 'missing'), '--api-base', 'http://127.0.0.1:1/api/v1', '--allow-localhost'], { cwd: empty, env }).catch(error => error);
+   assert.equal(refused.code, 1); assert.match(refused.stderr, /CREDENTIAL_REQUIRED|DIRECTORY_REQUIRED/);
+-- 
+2.43.0
+
