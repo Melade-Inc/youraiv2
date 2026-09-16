@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YourAI — Private AI Infrastructure for Law Firms</title>
+<meta name="description" content="Private AI infrastructure for law firms. Your matters, your data, your control.">
+<meta property="og:title" content="YourAI — Private AI Infrastructure for Law Firms">
+<meta property="og:description" content="Private AI infrastructure for law firms. Your matters, your data, your control.">
+<meta property="og:type" content="website">
+<style>
+  :root{
+    --navy:#0A1628; --navy-2:#121F36; --line:#1E2D45;
+    --blue:#2563EB; --blue-2:#3B82F6; --accent:#E8453C;
+    --text:#FFFFFF; --muted:#9FB0C9; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--navy); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:980px;margin:0 auto;padding:0 24px}
+  header{border-bottom:1px solid var(--line)}
+  .bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 0}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);flex:0 0 auto}
+  nav a{color:var(--muted);text-decoration:none;font-size:14px;margin-left:20px}
+  nav a:hover{color:var(--text)}
+  .hero{padding:72px 0 56px}
+  .eyebrow{color:var(--blue-2);font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;margin:0 0 14px}
+  h1{font-size:clamp(30px,5.2vw,50px);line-height:1.1;margin:0 0 18px;letter-spacing:-.02em}
+  .lede{color:var(--muted);font-size:clamp(16px,2.2vw,19px);max-width:62ch;margin:0 0 30px}
+  .cta{display:flex;flex-wrap:wrap;gap:12px}
+  .btn{display:inline-block;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:600;font-size:15px}
+  .btn-primary{background:var(--blue);color:#fff}
+  .btn-primary:hover{background:var(--blue-2)}
+  .btn-ghost{border:1px solid var(--line);color:var(--text)}
+  .btn-ghost:hover{border-color:var(--blue-2)}
+  .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));padding:8px 0 64px}
+  .card{background:var(--navy-2);border:1px solid var(--line);border-radius:var(--radius);padding:22px}
+  .card h3{margin:0 0 8px;font-size:16px}
+  .card p{margin:0;color:var(--muted);font-size:14px}
+  footer{border-top:1px solid var(--line);padding:26px 0;color:var(--muted);font-size:13px;
+    display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between}
+  footer a{color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap bar">
+    <div class="brand"><span class="dot"></span> YourAI</div>
+    <nav>
+      <a href="#what">What it is</a>
+      <a href="#how">How it works</a>
+      <a href="#contact">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <p class="eyebrow">Private AI infrastructure</p>
+    <h1>Your matters. Your data. Your control.</h1>
+    <p class="lede">
+      YourAI gives law firms a private context layer, so an assistant can answer from
+      your own documents and precedent without that material leaving infrastructure you own.
+    </p>
+    <div class="cta">
+      <a class="btn btn-primary" href="#contact">Request a walkthrough</a>
+      <a class="btn btn-ghost" href="#what">See what it does</a>
+    </div>
+  </section>
+
+  <section id="what" class="grid">
+    <div class="card">
+      <h3>Private by architecture</h3>
+      <p>Runs in a tenant you control. No training on your files, no shared index across firms.</p>
+    </div>
+    <div class="card">
+      <h3>Grounded in your work</h3>
+      <p>Answers cite the matter, memo, or filing they came from, so associates can verify the source.</p>
+    </div>
+    <div class="card">
+      <h3>Role-aware access</h3>
+      <p>Permissions follow the firm's existing structure. Access ends where the matter ends.</p>
+    </div>
+  </section>
+
+  <section id="how" class="grid">
+    <div class="card">
+      <h3>1. Connect</h3>
+      <p>Point YourAI at the document systems the firm already runs on.</p>
+    </div>
+    <div class="card">
+      <h3>2. Ground</h3>
+      <p>Your context is indexed inside your boundary and stays there.</p>
+    </div>
+    <div class="card">
+      <h3>3. Ask</h3>
+      <p>Ask in plain English. Get an answer with its citation attached.</p>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap" id="contact">
+  <span>&copy; 2026 YourAI Inc., a Melade company.</span>
+  <span><a href="mailto:hello@yourai.inc">hello@yourai.inc</a></span>
+</footer>
+</body>
+</html>
