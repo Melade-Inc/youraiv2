@@ -1,0 +1,36 @@
+From a8f266daea19e3d6ea145b32161f12ab10b2beee Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 16 Sep 2026 21:08:21 +0000
+Subject: [PATCH] Install ripgrep for the database CI job
+
+The db job added in #69 runs supabase/tests/run-local.sh, which checks
+each race log with rg. The ubuntu-latest runner image does not ship
+ripgrep, so the job failed after the expected VERSION_CONFLICT with
+"rg: command not found". Install ripgrep in its own step, independent
+of whether PostgreSQL 17 is already present on the runner.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0193fVPcTrjEFef6JTdVCFFj
+---
+ .github/workflows/ci.yml | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 26fd92c..a5626c8 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -36,6 +36,11 @@ jobs:
+           node-version: 24
+           cache: pnpm
+       - run: pnpm install --frozen-lockfile
++      - name: Install ripgrep; run-local.sh uses rg to inspect the race logs
++        run: |
++          sudo apt-get update
++          sudo apt-get install -y --no-install-recommends ripgrep
++          rg --version
+       - name: Install PostgreSQL 17 from the PGDG repository unless the runner image already has it
+         run: |
+           if [ ! -x "$PG_BIN/initdb" ]; then
+-- 
+2.43.0
+
