@@ -1,6 +1,6 @@
-From d15ff601ba7bfb5d6844f1c97db59be3d4562806 Mon Sep 17 00:00:00 2001
+From 418ae65ea67b813f6db670d62085194f929c230e Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
-Date: Wed, 16 Sep 2026 21:02:02 +0000
+Date: Wed, 16 Sep 2026 21:07:22 +0000
 Subject: [PATCH] Add the public CLI and skill release pipeline
 
 Port the reviewed distribution pipeline from the integration branch onto

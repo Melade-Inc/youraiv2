@@ -1,6 +1,6 @@
-From 96ff5ed37ce00bb69c8bf85ee9284b5a66ab2de6 Mon Sep 17 00:00:00 2001
+From 7a320e5389a4238017322d02718d1814599ca4d8 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
-Date: Wed, 16 Sep 2026 21:04:25 +0000
+Date: Wed, 16 Sep 2026 21:07:22 +0000
 Subject: [PATCH] Publish CLI discovery: live-link 0.1.0 on npm and the public
  skill
 
@@ -30,13 +30,13 @@ Claude-Session: https://claude.ai/code/session_017twst4MFpEXdY2hjihXFdf
  6 files changed, 74 insertions(+), 38 deletions(-)
 
 diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
-index 142143e..7351e28 100644
+index 142143e..bbd4123 100644
 --- a/.github/workflows/ci.yml
 +++ b/.github/workflows/ci.yml
-@@ -22,3 +22,23 @@ jobs:
-       - run: pnpm --filter @live-link/cli test
-       - run: node --test tests/ops/*.test.mjs
-       - run: pnpm build
+@@ -6,6 +6,26 @@ on:
+ permissions:
+   contents: read
+ jobs:
 +  published-cli:
 +    name: Published CLI matches this source (npm and public skill)
 +    runs-on: ubuntu-latest
@@ -57,6 +57,9 @@ index 142143e..7351e28 100644
 +          npx -y "live-link@${PIN}" doctor | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const d=JSON.parse(s);if(d.cliVersion!==process.argv[1]||d.distribution.status!=="published")process.exit(1)})' "${PIN}"
 +      - name: Verify npm metadata, tarball bytes, public tag, skill and notices against this source
 +        run: node scripts/release/verify-distribution.mjs "$(node -p 'require("./packages/cli/package.json").version')"
+   verify:
+     runs-on: ubuntu-latest
+     steps:
 diff --git a/docs/operations/CLI_RELEASE.md b/docs/operations/CLI_RELEASE.md
 index 454e98d..b8f83ef 100644
 --- a/docs/operations/CLI_RELEASE.md
