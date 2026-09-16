@@ -1,0 +1,49 @@
+From 9cc4c4fdbf377945dc64ae797e63833d9fc0ac15 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 16 Sep 2026 20:33:26 +0000
+Subject: [PATCH] Name the publication guard migration by its applied
+ production version
+
+Production project fieqjhnbucwigyjsyrgc recorded this migration as version
+20260916194613 when it was applied. Rename the file to match so a
+supabase db push from main reports nothing pending. Content unchanged
+(SHA-256 7713249b11d107cc06e9a5786cf9a7d9d2caf2e01872c324e6585eca6a50a547).
+Update the filename references in the guard runbook and contract.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017twst4MFpEXdY2hjihXFdf
+---
+ docs/operations/AGENT_PUBLISH_GUARD.md                        | 4 ++--
+ ...n_guard.sql => 20260916194613_agent_publication_guard.sql} | 0
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+ rename supabase/migrations/{20260910140000_agent_publication_guard.sql => 20260916194613_agent_publication_guard.sql} (100%)
+
+diff --git a/docs/operations/AGENT_PUBLISH_GUARD.md b/docs/operations/AGENT_PUBLISH_GUARD.md
+index 7b4f971..0cd4344 100644
+--- a/docs/operations/AGENT_PUBLISH_GUARD.md
++++ b/docs/operations/AGENT_PUBLISH_GUARD.md
+@@ -39,7 +39,7 @@ replace canonical publish with this source branch's older ten-argument definitio
+    automatic previews before push. Run fresh GitHub CI on the exact candidate.
+    Review and merge approval remain separate. Do not merge the unrelated stack.
+ 2. Recheck catalog and migration history. Apply ONLY
+-   `20260910140000_agent_publication_guard.sql` after migration approval.
++   `20260916194613_agent_publication_guard.sql` after migration approval.
+    SHA-256: `7713249b11d107cc06e9a5786cf9a7d9d2caf2e01872c324e6585eca6a50a547`.
+    Never run a blanket db push from this older production branch.
+ 3. Verify revision integer NOT NULL/default0/check; trigger on INSERT/UPDATE;
+@@ -123,7 +123,7 @@ Automatic Vercel builds were canceled by Ignored Build Step on both projects.
+ 
+ Applied exact reviewed SQL using Supabase apply_migration. Provider recorded name
+ agent_publication_guard with version20260916194613 (source filename remains
+-20260910140000_agent_publication_guard.sql). SHA mapping above is authoritative;
++20260916194613_agent_publication_guard.sql). SHA mapping above is authoritative;
+ never blindly replay this source file based on filename mismatch. Catalog verified
+ integer NOT NULL default0, nonnegative constraint, BEFORE INSERT OR UPDATE trigger,
+ exact thirteen-argument service-only SECURITY DEFINER wrapper/public,pg_temp path,
+diff --git a/supabase/migrations/20260910140000_agent_publication_guard.sql b/supabase/migrations/20260916194613_agent_publication_guard.sql
+similarity index 100%
+rename from supabase/migrations/20260910140000_agent_publication_guard.sql
+rename to supabase/migrations/20260916194613_agent_publication_guard.sql
+-- 
+2.43.0
+

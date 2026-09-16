@@ -1,0 +1,55 @@
+From 08fafe564ab89bdded47541ec3fc0f484d4ffa94 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 16 Sep 2026 20:27:54 +0000
+Subject: [PATCH] Run the PostgreSQL 17 isolation and concurrency suite in CI
+
+Add the db job from the integration branch so every PR to main runs
+supabase/tests/run-local.sh on a disposable PostgreSQL 17 cluster:
+migrations, RLS, transactional guards and each concurrent-*.sql race.
+The verify job is unchanged. The guest rollout rehearsal step stays with
+the guest slice.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017twst4MFpEXdY2hjihXFdf
+---
+ .github/workflows/ci.yml | 27 +++++++++++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 1c852cd..26fd92c 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -21,3 +21,30 @@ jobs:
+       - run: pnpm test
+       - run: pnpm --filter @live-link/cli test
+       - run: pnpm build
++
++  db:
++    name: Database isolation and concurrency (PostgreSQL 17)
++    runs-on: ubuntu-latest
++    timeout-minutes: 30
++    env:
++      PG_BIN: /usr/lib/postgresql/17/bin
++    steps:
++      - uses: actions/checkout@v4
++      - uses: pnpm/action-setup@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 24
++          cache: pnpm
++      - run: pnpm install --frozen-lockfile
++      - name: Install PostgreSQL 17 from the PGDG repository unless the runner image already has it
++        run: |
++          if [ ! -x "$PG_BIN/initdb" ]; then
++            sudo apt-get update
++            sudo apt-get install -y --no-install-recommends postgresql-common
++            sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
++            sudo apt-get install -y --no-install-recommends postgresql-17
++          fi
++          "$PG_BIN/postgres" --version
++      # Disposable loopback cluster: migrations, RLS, transactional guards and
++      # every concurrent-*.sql race in supabase/tests and tests/sql.
++      - run: pnpm test:db
+-- 
+2.43.0
+
