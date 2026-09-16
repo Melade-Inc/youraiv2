@@ -6,7 +6,8 @@ to be applied by Codex with `git am` (authorship is preserved). Order matters.
 | Patch | Apply onto | Then |
 | --- | --- | --- |
 | `0001` rename guard migration to applied version `20260916194613` + doc refs | `codex/guarded-publish-release` (PR #68) | push; CI; squash-merge #68 |
-| `0002` PostgreSQL 17 `db` CI job | `main` after #68 merges | branch `claude/ci-db-job`, push, PR |
+| `0002` PostgreSQL 17 `db` CI job | `main` after #68 merges | branch `claude/ci-db-job`, push, PR (#69) |
+| `0006` install ripgrep in the `db` job (fixes #69's runner failure) | `claude/ci-db-job` at f9153ae (PR #69 head) | `git am`, push; CI green; merge #69 |
 | `0003` backfill 21 production-applied migrations + matching SQL tests | `main` after #68 merges | branch `claude/migration-alignment`, push, PR |
 | `0004` public CLI + skill release pipeline (slice 3) | `main` after #68 merges (independent of 0002/0003) | branch `claude/cli-distribution`, push, PR; merge after review |
 | `0005` publish CLI discovery: live-link 0.1.0 published | on top of `0004` | branch `claude/cli-publish-0.1.0`, push, PR; its `published-cli` job stays red until the pin is on npm; tag its head `cli-v0.1.0` to release, then re-run CI, then merge (see docs/operations/CLI_RELEASE.md) |
